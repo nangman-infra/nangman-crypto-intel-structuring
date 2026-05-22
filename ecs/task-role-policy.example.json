@@ -35,8 +35,8 @@
       "Effect": "Allow",
       "Action": ["secretsmanager:GetSecretValue"],
       "Resource": [
-        "arn:aws:secretsmanager:ap-northeast-2:791444962214:secret:REPLACE_WITH_RUSTFS_ACCESS_KEY*",
-        "arn:aws:secretsmanager:ap-northeast-2:791444962214:secret:REPLACE_WITH_RUSTFS_SECRET_KEY*"
+        "arn:aws:secretsmanager:ap-northeast-2:<aws-account-id>:secret:REPLACE_WITH_RUSTFS_ACCESS_KEY*",
+        "arn:aws:secretsmanager:ap-northeast-2:<aws-account-id>:secret:REPLACE_WITH_RUSTFS_SECRET_KEY*"
       ]
     }
   ]

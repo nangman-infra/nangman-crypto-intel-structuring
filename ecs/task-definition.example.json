@@ -8,8 +8,8 @@
     "cpuArchitecture": "ARM64",
     "operatingSystemFamily": "LINUX"
   },
-  "executionRoleArn": "arn:aws:iam::791444962214:role/REPLACE_WITH_ECS_EXECUTION_ROLE",
-  "taskRoleArn": "arn:aws:iam::791444962214:role/REPLACE_WITH_INTEL_L1_TASK_ROLE",
+  "executionRoleArn": "arn:aws:iam::<aws-account-id>:role/REPLACE_WITH_ECS_EXECUTION_ROLE",
+  "taskRoleArn": "arn:aws:iam::<aws-account-id>:role/REPLACE_WITH_INTEL_L1_TASK_ROLE",
   "containerDefinitions": [
     {
       "name": "intel-structuring-app",
@@ -61,11 +61,11 @@
       "secrets": [
         {
           "name": "INTEL_L1_L0_RUSTFS_ACCESS_KEY_ID",
-          "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:791444962214:secret:REPLACE_WITH_RUSTFS_ACCESS_KEY"
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:<aws-account-id>:secret:REPLACE_WITH_RUSTFS_ACCESS_KEY"
         },
         {
           "name": "INTEL_L1_L0_RUSTFS_SECRET_ACCESS_KEY",
-          "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:791444962214:secret:REPLACE_WITH_RUSTFS_SECRET_KEY"
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:<aws-account-id>:secret:REPLACE_WITH_RUSTFS_SECRET_KEY"
         }
       ],
       "logConfiguration": {
