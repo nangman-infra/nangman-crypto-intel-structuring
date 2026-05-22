@@ -2,7 +2,7 @@
 
 `intel-structuring-app` is the INTEL-L1 stateless worker.
 
-Repository: `git@github.com:pandora0667/nangman-crypto-intel-structuring.git`
+Repository: `git@github.com:nangman-infra/nangman-crypto-intel-structuring.git`
 
 It consumes `RAW_INTEL` pointer messages from NATS JetStream, recovers raw evidence from RustFS, reads Market-L1 only through the `l1_index -> manifest -> report -> output_object_keys` contract path, structures the event, writes INTEL-L1 objects to S3, publishes structured pointers to NATS, and only then acknowledges the original RAW_INTEL message.
 
@@ -54,7 +54,7 @@ Single numeric derivatives snapshots are never allowed to use Sonnet. `stale_but
 ## Local run
 
 ```bash
-git clone git@github.com:pandora0667/nangman-crypto-intel-structuring.git
+git clone git@github.com:nangman-infra/nangman-crypto-intel-structuring.git
 cd nangman-crypto-intel-structuring
 cp .env.example .env
 sudo docker compose -f compose.yml --env-file .env up --build
