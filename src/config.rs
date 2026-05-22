@@ -530,4 +530,24 @@ mod tests {
             DEFAULT_MARKET_CONTEXT_STALE_AFTER_MS
         );
     }
+
+    #[test]
+    fn separates_aws_region_from_bedrock_region() {
+        let args = Args::parse(
+            [
+                "intel-structuring-app",
+                "--aws-region",
+                "ap-northeast-2",
+                "--bedrock-region",
+                "us-east-1",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap();
+
+        assert_eq!(args.output_store.region, "ap-northeast-2");
+        assert_eq!(args.market_l1_store.region, "ap-northeast-2");
+        assert_eq!(args.bedrock.region, "us-east-1");
+    }
 }

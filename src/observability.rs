@@ -60,3 +60,29 @@ pub fn emit_processing_metric(metric: &ProcessingMetric) -> AppResult<()> {
     println!("{}", serde_json::to_string(&document)?);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emits_primary_and_escalation_metrics() {
+        let metric = ProcessingMetric {
+            raw_event_id: "raw-1".to_owned(),
+            packet_id: "packet-1".to_owned(),
+            model_tier_used: ModelTierUsed::Escalation,
+            terminal_decision: TerminalDecision::HighConfidenceStructured,
+            market_context_status: MarketContextStatus::Available,
+            ack_ready: true,
+            fallback_count: 0,
+            conflict_count: 0,
+            primary_invocation_count: 1,
+            escalation_invocation_count: 1,
+            numeric_snapshot_count: 0,
+            stale_market_context_count: 0,
+            escalation_on_numeric_snapshot_count: 0,
+        };
+
+        emit_processing_metric(&metric).unwrap();
+    }
+}
