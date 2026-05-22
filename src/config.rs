@@ -20,6 +20,7 @@ pub const DEFAULT_RUSTFS_BUCKET: &str = "intel-crawl-app-l0";
 pub const DEFAULT_RUSTFS_REGION: &str = "us-east-1";
 pub const DEFAULT_OUTPUT_BUCKET: &str = "nangman-crypto-dev-intel-structuring-l1-962214";
 pub const DEFAULT_AWS_REGION: &str = "ap-northeast-2";
+pub const DEFAULT_BEDROCK_REGION: &str = "us-east-1";
 pub const DEFAULT_MARKET_L1_BUCKET: &str = "nangman-crypto-dev-market-ingest-l1-962214";
 pub const DEFAULT_MARKET_L1_WINDOW_MS: i64 = 1_000;
 pub const DEFAULT_MARKET_CONTEXT_LATEST_BEFORE_LOOKBACK_MS: i64 = 6 * 60 * 60 * 1_000;
@@ -46,7 +47,7 @@ pub struct ModelPolicyConfig {
     pub primary_model_id: String,
     pub escalation_model_id: String,
     pub escalate_if_confidence_below: f64,
-    pub sonnet_budget_ratio: f64,
+    pub escalation_budget_ratio: f64,
     pub enable_bedrock: bool,
 }
 
@@ -118,8 +119,10 @@ impl Args {
                 "--aws-region" => {
                     let region = required_value(&mut values, "--aws-region")?;
                     args.output_store.region = region.clone();
-                    args.market_l1_store.region = region.clone();
-                    args.bedrock.region = region;
+                    args.market_l1_store.region = region;
+                }
+                "--bedrock-region" => {
+                    args.bedrock.region = required_value(&mut values, "--bedrock-region")?;
                 }
                 "--aws-profile" => {
                     let profile = required_value(&mut values, "--aws-profile")?;
@@ -251,7 +254,7 @@ impl Args {
             market_l1_window_ms: env_i64("INTEL_L1_MARKET_WINDOW_MS", DEFAULT_MARKET_L1_WINDOW_MS),
             bedrock: BedrockConfig {
                 enabled: enable_bedrock,
-                region: env_or("BEDROCK_REGION", &aws_region),
+                region: env_or("BEDROCK_REGION", DEFAULT_BEDROCK_REGION),
                 profile: env_opt("AWS_PROFILE"),
                 primary_model_id: primary_model_id.clone(),
                 escalation_model_id: escalation_model_id.clone(),
@@ -266,7 +269,7 @@ impl Args {
                     "INTEL_L1_ESCALATE_IF_CONFIDENCE_BELOW",
                     0.65,
                 ),
-                sonnet_budget_ratio: env_f64("INTEL_L1_SONNET_BUDGET_RATIO", 0.15),
+                escalation_budget_ratio: env_f64("INTEL_L1_ESCALATION_BUDGET_RATIO", 0.15),
                 enable_bedrock,
             },
             processing: ProcessingConfig {
@@ -339,8 +342,8 @@ impl Args {
             "INTEL_L1_ESCALATE_IF_CONFIDENCE_BELOW",
         )?;
         validate_ratio(
-            self.model_policy.sonnet_budget_ratio,
-            "INTEL_L1_SONNET_BUDGET_RATIO",
+            self.model_policy.escalation_budget_ratio,
+            "INTEL_L1_ESCALATION_BUDGET_RATIO",
         )?;
         if self.processing.chunk_max_records == 0 {
             return Err(AppError::config(
@@ -491,7 +494,7 @@ fn env_f64(name: &str, default: f64) -> f64 {
 }
 
 fn help() -> String {
-    "Usage: intel-structuring-app [--max-messages N] [--exit-on-idle true|false] [--enable-bedrock true|false]".to_owned()
+    "Usage: intel-structuring-app [--max-messages N] [--exit-on-idle true|false] [--enable-bedrock true|false] [--bedrock-region REGION]".to_owned()
 }
 
 #[cfg(test)]

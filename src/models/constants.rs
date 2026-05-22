@@ -15,8 +15,8 @@ pub const MARKET_L1_MANIFEST_SCHEMA_VERSION: &str = "l1_manifest_v1";
 pub const MARKET_L1_REPORT_SCHEMA_VERSION: &str = "normalization_report_v1";
 pub const MARKET_L1_SLICE_SCHEMA_VERSION: &str = "normalized_market_slice_v1";
 pub const STRUCTURING_POLICY_VERSION: &str = "intel_l1_policy_20260509_p0_replay_guard_v1";
-pub const DEFAULT_PRIMARY_MODEL_ID: &str = "global.anthropic.claude-haiku-4-5-20251001-v1:0";
-pub const DEFAULT_ESCALATION_MODEL_ID: &str = "global.anthropic.claude-sonnet-4-6";
+pub const DEFAULT_PRIMARY_MODEL_ID: &str = "us.meta.llama4-scout-17b-instruct-v1:0";
+pub const DEFAULT_ESCALATION_MODEL_ID: &str = "us.meta.llama4-maverick-17b-instruct-v1:0";
 
 pub const FORBIDDEN_OUTPUT_TERMS: &[&str] = &[
     "buy",

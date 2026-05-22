@@ -8,9 +8,9 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelStage {
-    Haiku,
-    HaikuRepair,
-    Sonnet,
+    Primary,
+    PrimaryRepair,
+    Escalation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

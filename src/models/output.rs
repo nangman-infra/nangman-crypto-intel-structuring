@@ -258,8 +258,8 @@ pub enum ContradictionFlag {
 #[serde(rename_all = "snake_case")]
 pub enum ModelTierUsed {
     RuleOnly,
-    Haiku,
-    Sonnet,
+    Primary,
+    Escalation,
     FallbackOnly,
 }
 

@@ -15,9 +15,9 @@ RAW_INTEL durable pull consumer
   -> L0 source/content quality admission
   -> rule/NLP/NLI
   -> deterministic evidence_pack with stable evidence IDs
-  -> Claude Haiku 4.5 Global structured-output extraction
-  -> Haiku repair for evidence/schema gate misses
-  -> Claude Sonnet 4.6 Global for hard/high-risk/high-impact cases
+  -> Llama 4 Scout primary extraction through Bedrock Converse
+  -> primary repair for evidence/schema gate misses
+  -> Llama 4 Maverick escalation for hard/high-risk/high-impact cases
   -> immutable story_member write
   -> refreshed story_cluster merge
   -> S3 JSONL outputs, manifest, and prepared index
@@ -47,9 +47,11 @@ source_quality
 source_relevance_scope
 ```
 
-Rule-only output is blocked when the raw item is community reaction, market snapshot, title-only, or metadata fallback evidence. Direct, high-quality community reaction can finish on Haiku. Weak global symbol-scan evidence can still call Haiku first, but any structured claim is escalated to Sonnet only when the Sonnet admission contract allows it.
+Rule-only output is blocked when the raw item is community reaction, market snapshot, title-only, or metadata fallback evidence. Direct, high-quality community reaction can finish on the primary model. Weak global symbol-scan evidence can still call the primary model first, but any structured claim is escalated only when the escalation admission contract allows it.
 
-Single numeric derivatives snapshots are never allowed to use Sonnet. `stale_but_usable` market context is preserved in the packet as audit context, but it is not strong enough to open expensive model escalation for numeric snapshots. Non-critical safety escalation also respects `INTEL_L1_SONNET_BUDGET_RATIO` as a hard budget.
+Single numeric derivatives snapshots are never allowed to use escalation. `stale_but_usable` market context is preserved in the packet as audit context, but it is not strong enough to open expensive model escalation for numeric snapshots. Non-critical safety escalation also respects `INTEL_L1_ESCALATION_BUDGET_RATIO` as a hard budget.
+
+Llama 4 Scout and Maverick are intentionally used as low-cost generation models. Bedrock Structured Outputs are not assumed for these models, so the app treats the local Rust contract as the source of truth: prompt schema, JSON extraction, serde validation, evidence-ID hydration, deterministic repair, admission gates, and fallback/quarantine logic all run outside the model.
 
 ## Local run
 

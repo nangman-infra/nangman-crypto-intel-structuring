@@ -15,6 +15,9 @@ fi
 : "${INTEL_L1_OUTPUT_S3_BUCKET:?INTEL_L1_OUTPUT_S3_BUCKET is required}"
 : "${INTEL_L1_MARKET_L1_BUCKET:?INTEL_L1_MARKET_L1_BUCKET is required}"
 : "${AWS_REGION:=ap-northeast-2}"
+: "${BEDROCK_REGION:=us-east-1}"
+: "${INTEL_L1_PRIMARY_MODEL_ID:=us.meta.llama4-scout-17b-instruct-v1:0}"
+: "${INTEL_L1_ESCALATION_MODEL_ID:=us.meta.llama4-maverick-17b-instruct-v1:0}"
 
 echo "[1/4] NATS RAW_INTEL stream"
 docker run --rm natsio/nats-box:0.17.0 \
@@ -32,15 +35,15 @@ aws s3api head-bucket \
 
 echo "[4/4] Bedrock inference profiles"
 profile_count="$(aws bedrock list-inference-profiles \
-  --region "${BEDROCK_REGION:-$AWS_REGION}" \
-  --query 'length(inferenceProfileSummaries[?inferenceProfileId==`global.anthropic.claude-haiku-4-5-20251001-v1:0` || inferenceProfileId==`global.anthropic.claude-sonnet-4-6`])' \
+  --region "$BEDROCK_REGION" \
+  --query "length(inferenceProfileSummaries[?inferenceProfileId==\`$INTEL_L1_PRIMARY_MODEL_ID\` || inferenceProfileId==\`$INTEL_L1_ESCALATION_MODEL_ID\`])" \
   --output text)"
 if [[ "$profile_count" != "2" ]]; then
   aws bedrock list-inference-profiles \
-    --region "${BEDROCK_REGION:-$AWS_REGION}" \
-    --query 'inferenceProfileSummaries[?contains(inferenceProfileId, `claude-haiku`) || contains(inferenceProfileId, `claude-sonnet`)].[inferenceProfileId,status]' \
+    --region "$BEDROCK_REGION" \
+    --query 'inferenceProfileSummaries[?contains(inferenceProfileId, `llama4`)].[inferenceProfileId,status]' \
     --output table
-  echo "required Bedrock global inference profiles were not both found" >&2
+  echo "required Bedrock inference profiles were not both found" >&2
   exit 1
 fi
 

@@ -164,7 +164,7 @@
     },
     "model_tier_used": {
       "type": "string",
-      "enum": ["rule_only", "haiku", "sonnet", "fallback_only"]
+      "enum": ["rule_only", "primary", "escalation", "fallback_only"]
     },
     "terminal_decision": {
       "type": "string",

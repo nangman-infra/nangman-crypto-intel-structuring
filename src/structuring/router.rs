@@ -24,8 +24,8 @@ pub struct StructuringDecision {
     pub model_response: Option<ModelStructuringResponse>,
     pub model_tier_used: ModelTierUsed,
     pub fallback_count: usize,
-    pub haiku_invocations: usize,
-    pub sonnet_invocations: usize,
+    pub primary_invocations: usize,
+    pub escalation_invocations: usize,
 }
 
 impl<P: ModelProvider> ModelRouter<P> {
@@ -45,8 +45,8 @@ impl<P: ModelProvider> ModelRouter<P> {
                 model_response: None,
                 model_tier_used: ModelTierUsed::RuleOnly,
                 fallback_count: 0,
-                haiku_invocations: 0,
-                sonnet_invocations: 0,
+                primary_invocations: 0,
+                escalation_invocations: 0,
             });
         }
 
@@ -56,8 +56,8 @@ impl<P: ModelProvider> ModelRouter<P> {
                 model_response: None,
                 model_tier_used: ModelTierUsed::RuleOnly,
                 fallback_count: 0,
-                haiku_invocations: 0,
-                sonnet_invocations: 0,
+                primary_invocations: 0,
+                escalation_invocations: 0,
             });
         }
 
@@ -67,39 +67,39 @@ impl<P: ModelProvider> ModelRouter<P> {
                 model_response: None,
                 model_tier_used: ModelTierUsed::FallbackOnly,
                 fallback_count: 1,
-                haiku_invocations: 0,
-                sonnet_invocations: 0,
+                primary_invocations: 0,
+                escalation_invocations: 0,
             });
         }
 
         let request = model_request(event, market_context, &rule);
-        let haiku = self.provider.structure(ModelStage::Haiku, &request).await;
-        let Ok(haiku_response) = haiku else {
+        let primary = self.provider.structure(ModelStage::Primary, &request).await;
+        let Ok(primary_response) = primary else {
             return self
-                .try_sonnet_or_fallback(event, market_context, rule, 1)
+                .try_escalation_or_fallback(event, market_context, rule, 1)
                 .await;
         };
-        let mut haiku_invocations = 1;
-        let haiku_gate = verify_model_response(event, &haiku_response);
-        if haiku_gate.supported
-            && !self.should_escalate_from_model(event, market_context, &rule, &haiku_response)
+        let mut primary_invocations = 1;
+        let primary_gate = verify_model_response(event, &primary_response);
+        if primary_gate.supported
+            && !self.should_escalate_from_model(event, market_context, &rule, &primary_response)
         {
             return Ok(StructuringDecision {
                 rule,
-                model_response: Some(haiku_response),
-                model_tier_used: ModelTierUsed::Haiku,
+                model_response: Some(primary_response),
+                model_tier_used: ModelTierUsed::Primary,
                 fallback_count: 0,
-                haiku_invocations: 1,
-                sonnet_invocations: 0,
+                primary_invocations: 1,
+                escalation_invocations: 0,
             });
         }
 
-        if !haiku_gate.supported && !rule.high_risk {
-            haiku_invocations += 1;
-            let repair_request = model_repair_request(request, &haiku_response, &haiku_gate);
+        if !primary_gate.supported && !rule.high_risk {
+            primary_invocations += 1;
+            let repair_request = model_repair_request(request, &primary_response, &primary_gate);
             if let Ok(repaired_response) = self
                 .provider
-                .structure(ModelStage::HaikuRepair, &repair_request)
+                .structure(ModelStage::PrimaryRepair, &repair_request)
                 .await
             {
                 let repaired_gate = verify_model_response(event, &repaired_response);
@@ -114,16 +114,16 @@ impl<P: ModelProvider> ModelRouter<P> {
                     return Ok(StructuringDecision {
                         rule,
                         model_response: Some(repaired_response),
-                        model_tier_used: ModelTierUsed::Haiku,
+                        model_tier_used: ModelTierUsed::Primary,
                         fallback_count: 0,
-                        haiku_invocations: 2,
-                        sonnet_invocations: 0,
+                        primary_invocations: 2,
+                        escalation_invocations: 0,
                     });
                 }
             }
         }
 
-        self.try_sonnet_or_fallback(event, market_context, rule, haiku_invocations)
+        self.try_escalation_or_fallback(event, market_context, rule, primary_invocations)
             .await
     }
 
@@ -157,7 +157,7 @@ impl<P: ModelProvider> ModelRouter<P> {
         rule: &RuleAssessment,
         response: &ModelStructuringResponse,
     ) -> bool {
-        if !sonnet_admission_allows(event, market_context, rule, Some(response)) {
+        if !escalation_admission_allows(event, market_context, rule, Some(response)) {
             return false;
         }
         if rule.high_risk || matches!(response.terminal_decision, TerminalDecision::Conflicted) {
@@ -169,7 +169,7 @@ impl<P: ModelProvider> ModelRouter<P> {
         let high_impact = is_high_impact_event(&rule.event_type)
             || is_high_impact_event(&response.event_type)
             || event.source_category.contains("exchange");
-        let weak_raw_claim = raw_quality_requires_sonnet(event)
+        let weak_raw_claim = raw_quality_requires_escalation(event)
             && !matches!(
                 response.terminal_decision,
                 TerminalDecision::UnsupportedOrWeak
@@ -191,43 +191,47 @@ impl<P: ModelProvider> ModelRouter<P> {
             response.confidence_score < (self.policy.escalate_if_confidence_below + 0.10).min(1.0);
         let noncritical_escalation = weak_raw_claim || safety_escalation || audit_escalation;
         noncritical_escalation
-            && within_sonnet_budget(&event.event_id, self.policy.sonnet_budget_ratio)
+            && within_escalation_budget(&event.event_id, self.policy.escalation_budget_ratio)
     }
 
-    async fn try_sonnet_or_fallback(
+    async fn try_escalation_or_fallback(
         &self,
         event: &RawIntelEvent,
         market_context: &MarketContextSnapshot,
         rule: RuleAssessment,
-        haiku_invocations: usize,
+        primary_invocations: usize,
     ) -> AppResult<StructuringDecision> {
-        if !sonnet_admission_allows(event, market_context, &rule, None) {
+        if !escalation_admission_allows(event, market_context, &rule, None) {
             return Ok(StructuringDecision {
                 rule,
                 model_response: None,
                 model_tier_used: ModelTierUsed::FallbackOnly,
                 fallback_count: 1,
-                haiku_invocations,
-                sonnet_invocations: 0,
+                primary_invocations,
+                escalation_invocations: 0,
             });
         }
-        if !critical_rule_sonnet_path(&rule)
-            && !within_sonnet_budget(&event.event_id, self.policy.sonnet_budget_ratio)
+        if !critical_rule_escalation_path(&rule)
+            && !within_escalation_budget(&event.event_id, self.policy.escalation_budget_ratio)
         {
             return Ok(StructuringDecision {
                 rule,
                 model_response: None,
                 model_tier_used: ModelTierUsed::FallbackOnly,
                 fallback_count: 1,
-                haiku_invocations,
-                sonnet_invocations: 0,
+                primary_invocations,
+                escalation_invocations: 0,
             });
         }
 
         let request = model_request(event, market_context, &rule);
-        match self.provider.structure(ModelStage::Sonnet, &request).await {
-            Ok(sonnet_response) => {
-                let response = sonnet_response;
+        match self
+            .provider
+            .structure(ModelStage::Escalation, &request)
+            .await
+        {
+            Ok(escalation_response) => {
+                let response = escalation_response;
                 let gate = verify_model_response(event, &response);
                 if !gate.supported {
                     Ok(StructuringDecision {
@@ -235,17 +239,17 @@ impl<P: ModelProvider> ModelRouter<P> {
                         model_response: None,
                         model_tier_used: ModelTierUsed::FallbackOnly,
                         fallback_count: 1,
-                        haiku_invocations,
-                        sonnet_invocations: 1,
+                        primary_invocations,
+                        escalation_invocations: 1,
                     })
                 } else {
                     Ok(StructuringDecision {
                         rule,
                         model_response: Some(response),
-                        model_tier_used: ModelTierUsed::Sonnet,
+                        model_tier_used: ModelTierUsed::Escalation,
                         fallback_count: 0,
-                        haiku_invocations,
-                        sonnet_invocations: 1,
+                        primary_invocations,
+                        escalation_invocations: 1,
                     })
                 }
             }
@@ -254,8 +258,8 @@ impl<P: ModelProvider> ModelRouter<P> {
                 model_response: None,
                 model_tier_used: ModelTierUsed::FallbackOnly,
                 fallback_count: 1,
-                haiku_invocations,
-                sonnet_invocations: 1,
+                primary_invocations,
+                escalation_invocations: 1,
             }),
         }
     }
@@ -274,11 +278,11 @@ fn is_high_impact_event(event_type: &crate::models::output::EventType) -> bool {
     )
 }
 
-fn critical_rule_sonnet_path(rule: &RuleAssessment) -> bool {
+fn critical_rule_escalation_path(rule: &RuleAssessment) -> bool {
     rule.high_risk
 }
 
-fn within_sonnet_budget(raw_event_id: &str, ratio: f64) -> bool {
+fn within_escalation_budget(raw_event_id: &str, ratio: f64) -> bool {
     if ratio <= 0.0 {
         return false;
     }
@@ -319,7 +323,7 @@ fn should_bypass_models_for_cost(
     weak_general_item && is_low_quality_broad_scan(event)
 }
 
-fn sonnet_admission_allows(
+fn escalation_admission_allows(
     event: &RawIntelEvent,
     market_context: &MarketContextSnapshot,
     rule: &RuleAssessment,
@@ -572,7 +576,7 @@ fn raw_quality_requires_model(event: &RawIntelEvent) -> bool {
     )
 }
 
-fn raw_quality_requires_sonnet(event: &RawIntelEvent) -> bool {
+fn raw_quality_requires_escalation(event: &RawIntelEvent) -> bool {
     event.content_quality_score.is_some_and(|score| score < 45)
         || matches!(
             event.source_relevance_scope.as_deref(),

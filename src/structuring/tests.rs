@@ -17,9 +17,9 @@ use crate::structuring::rule::assess;
 use async_trait::async_trait;
 
 struct ScriptedProvider {
-    haiku: Option<ModelStructuringResponse>,
-    haiku_repair: Option<ModelStructuringResponse>,
-    sonnet: Option<ModelStructuringResponse>,
+    primary: Option<ModelStructuringResponse>,
+    primary_repair: Option<ModelStructuringResponse>,
+    escalation: Option<ModelStructuringResponse>,
 }
 
 #[async_trait]
@@ -30,29 +30,29 @@ impl ModelProvider for ScriptedProvider {
         _request: &ModelStructuringRequest,
     ) -> AppResult<ModelStructuringResponse> {
         match stage {
-            ModelStage::Haiku => self
-                .haiku
+            ModelStage::Primary => self
+                .primary
                 .clone()
-                .ok_or_else(|| crate::error::AppError::bedrock("haiku unavailable")),
-            ModelStage::HaikuRepair => self
-                .haiku_repair
+                .ok_or_else(|| crate::error::AppError::bedrock("primary unavailable")),
+            ModelStage::PrimaryRepair => self
+                .primary_repair
                 .clone()
-                .ok_or_else(|| crate::error::AppError::bedrock("haiku repair unavailable")),
-            ModelStage::Sonnet => self
-                .sonnet
+                .ok_or_else(|| crate::error::AppError::bedrock("primary repair unavailable")),
+            ModelStage::Escalation => self
+                .escalation
                 .clone()
-                .ok_or_else(|| crate::error::AppError::bedrock("sonnet unavailable")),
+                .ok_or_else(|| crate::error::AppError::bedrock("escalation unavailable")),
         }
     }
 }
 
 #[tokio::test]
-async fn escalates_from_weak_haiku_to_sonnet() {
+async fn escalates_from_weak_primary_to_escalation() {
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(response(0.4, TerminalDecision::UnsupportedOrWeak)),
-            haiku_repair: None,
-            sonnet: Some(response(0.9, TerminalDecision::HighConfidenceStructured)),
+            primary: Some(response(0.4, TerminalDecision::UnsupportedOrWeak)),
+            primary_repair: None,
+            escalation: Some(response(0.9, TerminalDecision::HighConfidenceStructured)),
         },
         policy(true),
     );
@@ -61,19 +61,19 @@ async fn escalates_from_weak_haiku_to_sonnet() {
 
     assert_eq!(
         decision.model_tier_used,
-        crate::models::output::ModelTierUsed::Sonnet
+        crate::models::output::ModelTierUsed::Escalation
     );
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 1);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 1);
 }
 
 #[tokio::test]
 async fn falls_back_when_models_disabled() {
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: None,
-            haiku_repair: None,
-            sonnet: None,
+            primary: None,
+            primary_repair: None,
+            escalation: None,
         },
         policy(false),
     );
@@ -87,12 +87,12 @@ async fn falls_back_when_models_disabled() {
 }
 
 #[tokio::test]
-async fn drops_unsupported_sonnet_output_instead_of_using_weak_model_content() {
+async fn drops_unsupported_escalation_output_instead_of_using_weak_model_content() {
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(response(0.4, TerminalDecision::UnsupportedOrWeak)),
-            haiku_repair: None,
-            sonnet: Some(response_with_evidence(
+            primary: Some(response(0.4, TerminalDecision::UnsupportedOrWeak)),
+            primary_repair: None,
+            escalation: Some(response_with_evidence(
                 0.9,
                 TerminalDecision::HighConfidenceStructured,
                 "Unsupported sentence from another source",
@@ -105,17 +105,17 @@ async fn drops_unsupported_sonnet_output_instead_of_using_weak_model_content() {
     assert_eq!(decision.model_tier_used, ModelTierUsed::FallbackOnly);
     assert!(decision.model_response.is_none());
     assert_eq!(decision.fallback_count, 1);
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 1);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 1);
 }
 
 #[tokio::test]
-async fn sonnet_failure_does_not_reuse_weak_haiku_content() {
+async fn escalation_failure_does_not_reuse_weak_primary_content() {
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(response(0.4, TerminalDecision::UnsupportedOrWeak)),
-            haiku_repair: None,
-            sonnet: None,
+            primary: Some(response(0.4, TerminalDecision::UnsupportedOrWeak)),
+            primary_repair: None,
+            escalation: None,
         },
         policy(true),
     );
@@ -127,38 +127,38 @@ async fn sonnet_failure_does_not_reuse_weak_haiku_content() {
 }
 
 #[tokio::test]
-async fn accepts_haiku_for_low_value_unsupported_outputs() {
+async fn accepts_primary_for_low_value_unsupported_outputs() {
     let mut event = event();
     event.source_category = "news".to_owned();
     event.symbol_candidates.clear();
     event.title = "General market commentary continues".to_owned();
     event.body = "General market commentary continues without a specific coin catalyst.".to_owned();
-    let mut haiku = response_with_evidence(
+    let mut primary = response_with_evidence(
         0.5,
         TerminalDecision::UnsupportedOrWeak,
         "General market commentary continues without a specific coin catalyst",
     );
-    haiku.event_type = EventType::Other;
-    haiku.normalized_symbols.clear();
-    haiku.symbol_confidence_band = ConfidenceBand::Weak;
+    primary.event_type = EventType::Other;
+    primary.normalized_symbols.clear();
+    primary.symbol_confidence_band = ConfidenceBand::Weak;
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(haiku),
-            haiku_repair: None,
-            sonnet: Some(response(0.9, TerminalDecision::HighConfidenceStructured)),
+            primary: Some(primary),
+            primary_repair: None,
+            escalation: Some(response(0.9, TerminalDecision::HighConfidenceStructured)),
         },
         policy(true),
     );
 
     let decision = router.decide(&event, &market_context()).await.unwrap();
 
-    assert_eq!(decision.model_tier_used, ModelTierUsed::Haiku);
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 0);
+    assert_eq!(decision.model_tier_used, ModelTierUsed::Primary);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 0);
 }
 
 #[tokio::test]
-async fn community_reaction_uses_haiku_without_sonnet_when_evidence_is_direct() {
+async fn community_reaction_uses_primary_without_escalation_when_evidence_is_direct() {
     let mut event = event();
     event.source_id = "social_hackernews_solana_rss".to_owned();
     event.source_category = "social".to_owned();
@@ -173,31 +173,31 @@ async fn community_reaction_uses_haiku_without_sonnet_when_evidence_is_direct() 
     event.source_relevance_scope = Some("direct_asset".to_owned());
     event.direct_asset_count = Some(1);
     event.matched_asset_count = Some(1);
-    let mut haiku = response_with_evidence(
+    let mut primary = response_with_evidence(
         0.86,
         TerminalDecision::HighConfidenceStructured,
         "SOL developer discussion gains attention from the community",
     );
-    haiku.event_type = EventType::SocialHype;
-    haiku.normalized_symbols = vec!["SOL".to_owned()];
+    primary.event_type = EventType::SocialHype;
+    primary.normalized_symbols = vec!["SOL".to_owned()];
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(haiku),
-            haiku_repair: None,
-            sonnet: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
+            primary: Some(primary),
+            primary_repair: None,
+            escalation: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
         },
         policy(true),
     );
 
     let decision = router.decide(&event, &market_context()).await.unwrap();
 
-    assert_eq!(decision.model_tier_used, ModelTierUsed::Haiku);
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 0);
+    assert_eq!(decision.model_tier_used, ModelTierUsed::Primary);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 0);
 }
 
 #[tokio::test]
-async fn weak_global_symbol_scan_claim_stays_on_haiku() {
+async fn weak_global_symbol_scan_claim_stays_on_primary() {
     let mut event = event();
     event.title = "ABC market headline circulates".to_owned();
     event.body = "ABC market headline circulates in a broad market digest.".to_owned();
@@ -207,16 +207,16 @@ async fn weak_global_symbol_scan_claim_stays_on_haiku() {
     event.source_relevance_scope = Some("global_symbol_scan".to_owned());
     event.direct_asset_count = Some(0);
     event.matched_asset_count = Some(1);
-    let haiku = response_with_evidence(
+    let primary = response_with_evidence(
         0.88,
         TerminalDecision::HighConfidenceStructured,
         "ABC market headline circulates in a broad market digest",
     );
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(haiku),
-            haiku_repair: None,
-            sonnet: Some(response_with_evidence(
+            primary: Some(primary),
+            primary_repair: None,
+            escalation: Some(response_with_evidence(
                 0.82,
                 TerminalDecision::LowConfidenceStructured,
                 "ABC market headline circulates in a broad market digest",
@@ -227,27 +227,27 @@ async fn weak_global_symbol_scan_claim_stays_on_haiku() {
 
     let decision = router.decide(&event, &market_context()).await.unwrap();
 
-    assert_eq!(decision.model_tier_used, ModelTierUsed::Haiku);
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 0);
+    assert_eq!(decision.model_tier_used, ModelTierUsed::Primary);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 0);
 }
 
 #[tokio::test]
 async fn numeric_market_snapshot_with_pending_context_bypasses_models() {
     let event = numeric_snapshot_event();
-    let mut haiku = response_with_evidence(
+    let mut primary = response_with_evidence(
         0.62,
         TerminalDecision::LowConfidenceStructured,
         r#"{"symbol":"BTCUSDT","open_interest":"1042","event_time_ms":1}"#,
     );
-    haiku.event_type = EventType::FundingShift;
-    haiku.normalized_symbols = vec!["BTC".to_owned()];
-    haiku.symbol_confidence_band = ConfidenceBand::Moderate;
+    primary.event_type = EventType::FundingShift;
+    primary.normalized_symbols = vec!["BTC".to_owned()];
+    primary.symbol_confidence_band = ConfidenceBand::Moderate;
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(haiku),
-            haiku_repair: None,
-            sonnet: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
+            primary: Some(primary),
+            primary_repair: None,
+            escalation: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
         },
         policy(true),
     );
@@ -258,26 +258,26 @@ async fn numeric_market_snapshot_with_pending_context_bypasses_models() {
         .unwrap();
 
     assert_eq!(decision.model_tier_used, ModelTierUsed::RuleOnly);
-    assert_eq!(decision.haiku_invocations, 0);
-    assert_eq!(decision.sonnet_invocations, 0);
+    assert_eq!(decision.primary_invocations, 0);
+    assert_eq!(decision.escalation_invocations, 0);
 }
 
 #[tokio::test]
-async fn numeric_market_snapshot_with_stale_context_stays_on_haiku() {
+async fn numeric_market_snapshot_with_stale_context_stays_on_primary() {
     let event = numeric_snapshot_event();
-    let mut haiku = response_with_evidence(
+    let mut primary = response_with_evidence(
         0.62,
         TerminalDecision::LowConfidenceStructured,
         r#"{"symbol":"BTCUSDT","open_interest":"1042","event_time_ms":1}"#,
     );
-    haiku.event_type = EventType::FundingShift;
-    haiku.normalized_symbols = vec!["BTC".to_owned()];
-    haiku.symbol_confidence_band = ConfidenceBand::Moderate;
+    primary.event_type = EventType::FundingShift;
+    primary.normalized_symbols = vec!["BTC".to_owned()];
+    primary.symbol_confidence_band = ConfidenceBand::Moderate;
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(haiku),
-            haiku_repair: None,
-            sonnet: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
+            primary: Some(primary),
+            primary_repair: None,
+            escalation: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
         },
         policy(true),
     );
@@ -287,93 +287,93 @@ async fn numeric_market_snapshot_with_stale_context_stays_on_haiku() {
         .await
         .unwrap();
 
-    assert_eq!(decision.model_tier_used, ModelTierUsed::Haiku);
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 0);
+    assert_eq!(decision.model_tier_used, ModelTierUsed::Primary);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 0);
 }
 
 #[tokio::test]
-async fn single_numeric_funding_snapshot_never_uses_sonnet_even_with_context() {
+async fn single_numeric_funding_snapshot_never_uses_escalation_even_with_context() {
     let event = numeric_snapshot_event();
-    let mut haiku = response_with_evidence(
+    let mut primary = response_with_evidence(
         0.62,
         TerminalDecision::LowConfidenceStructured,
         r#"{"symbol":"BTCUSDT","open_interest":"1042","event_time_ms":1}"#,
     );
-    haiku.event_type = EventType::FundingShift;
-    haiku.normalized_symbols = vec!["BTC".to_owned()];
-    haiku.symbol_confidence_band = ConfidenceBand::Moderate;
+    primary.event_type = EventType::FundingShift;
+    primary.normalized_symbols = vec!["BTC".to_owned()];
+    primary.symbol_confidence_band = ConfidenceBand::Moderate;
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(haiku),
-            haiku_repair: None,
-            sonnet: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
+            primary: Some(primary),
+            primary_repair: None,
+            escalation: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
         },
         policy(true),
     );
 
     let decision = router.decide(&event, &market_context()).await.unwrap();
 
-    assert_eq!(decision.model_tier_used, ModelTierUsed::Haiku);
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 0);
+    assert_eq!(decision.model_tier_used, ModelTierUsed::Primary);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 0);
 }
 
 #[tokio::test]
-async fn noncritical_high_impact_escalation_respects_sonnet_budget() {
+async fn noncritical_high_impact_escalation_respects_escalation_budget() {
     let mut event = event();
     event.title = "ABC listing expands to a new venue".to_owned();
     event.body = "ABC listing expands to a new venue with limited supporting detail.".to_owned();
     event.symbol_candidates.clear();
-    let mut haiku = response_with_evidence(
+    let mut primary = response_with_evidence(
         0.5,
         TerminalDecision::LowConfidenceStructured,
         "ABC listing expands to a new venue with limited supporting detail",
     );
-    haiku.event_type = EventType::Listing;
-    haiku.normalized_symbols = vec!["ABC".to_owned()];
-    haiku.symbol_confidence_band = ConfidenceBand::Moderate;
+    primary.event_type = EventType::Listing;
+    primary.normalized_symbols = vec!["ABC".to_owned()];
+    primary.symbol_confidence_band = ConfidenceBand::Moderate;
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(haiku),
-            haiku_repair: None,
-            sonnet: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
+            primary: Some(primary),
+            primary_repair: None,
+            escalation: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
         },
-        policy_with_sonnet_budget(true, 0.0),
+        policy_with_escalation_budget(true, 0.0),
     );
 
     let decision = router.decide(&event, &market_context()).await.unwrap();
 
-    assert_eq!(decision.model_tier_used, ModelTierUsed::Haiku);
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 0);
+    assert_eq!(decision.model_tier_used, ModelTierUsed::Primary);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 0);
 }
 
 #[tokio::test]
-async fn noncritical_sonnet_fallback_respects_sonnet_budget() {
+async fn noncritical_escalation_fallback_respects_escalation_budget() {
     let mut event = event();
     event.title = "ABC listing expands to a new venue".to_owned();
     event.body = "ABC listing expands to a new venue with limited supporting detail.".to_owned();
     event.symbol_candidates.clear();
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: None,
-            haiku_repair: None,
-            sonnet: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
+            primary: None,
+            primary_repair: None,
+            escalation: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
         },
-        policy_with_sonnet_budget(true, 0.0),
+        policy_with_escalation_budget(true, 0.0),
     );
 
     let decision = router.decide(&event, &market_context()).await.unwrap();
 
     assert_eq!(decision.model_tier_used, ModelTierUsed::FallbackOnly);
     assert_eq!(decision.fallback_count, 1);
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 0);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 0);
 }
 
 #[tokio::test]
-async fn unsupported_low_quality_broad_scan_does_not_use_sonnet() {
+async fn unsupported_low_quality_broad_scan_does_not_use_escalation() {
     let mut event = event();
     event.title = "ABC market headline circulates".to_owned();
     event.body = "ABC market headline circulates in a broad market digest.".to_owned();
@@ -385,22 +385,22 @@ async fn unsupported_low_quality_broad_scan_does_not_use_sonnet() {
     event.matched_asset_count = Some(1);
     let router = ModelRouter::new(
         ScriptedProvider {
-            haiku: Some(response_with_evidence(
+            primary: Some(response_with_evidence(
                 0.35,
                 TerminalDecision::UnsupportedOrWeak,
                 "ABC market headline circulates in a broad market digest",
             )),
-            haiku_repair: None,
-            sonnet: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
+            primary_repair: None,
+            escalation: Some(response(0.95, TerminalDecision::HighConfidenceStructured)),
         },
         policy(true),
     );
 
     let decision = router.decide(&event, &market_context()).await.unwrap();
 
-    assert_eq!(decision.model_tier_used, ModelTierUsed::Haiku);
-    assert_eq!(decision.haiku_invocations, 1);
-    assert_eq!(decision.sonnet_invocations, 0);
+    assert_eq!(decision.model_tier_used, ModelTierUsed::Primary);
+    assert_eq!(decision.primary_invocations, 1);
+    assert_eq!(decision.escalation_invocations, 0);
 }
 
 #[test]
@@ -411,8 +411,8 @@ fn packet_set_is_deterministic_for_redelivery_inputs() {
         model_response: None,
         model_tier_used: ModelTierUsed::RuleOnly,
         fallback_count: 0,
-        haiku_invocations: 0,
-        sonnet_invocations: 0,
+        primary_invocations: 0,
+        escalation_invocations: 0,
     };
 
     let first = build_packet_set(
@@ -485,10 +485,10 @@ fn numeric_snapshot_records_metric_guard_reasons() {
     let decision = StructuringDecision {
         rule: assess(&event),
         model_response: Some(model),
-        model_tier_used: ModelTierUsed::Haiku,
+        model_tier_used: ModelTierUsed::Primary,
         fallback_count: 0,
-        haiku_invocations: 1,
-        sonnet_invocations: 0,
+        primary_invocations: 1,
+        escalation_invocations: 0,
     };
 
     let packet_set = build_packet_set(
@@ -539,8 +539,8 @@ fn duplicate_or_syndicated_source_records_content_hash_guard() {
         model_response: None,
         model_tier_used: ModelTierUsed::RuleOnly,
         fallback_count: 0,
-        haiku_invocations: 0,
-        sonnet_invocations: 0,
+        primary_invocations: 0,
+        escalation_invocations: 0,
     };
 
     let packet_set = build_packet_set(
@@ -574,10 +574,10 @@ fn high_confidence_structured_packet_emits_context_flag() {
     let decision = StructuringDecision {
         rule: assess(&event),
         model_response: Some(response(0.9, TerminalDecision::HighConfidenceStructured)),
-        model_tier_used: ModelTierUsed::Haiku,
+        model_tier_used: ModelTierUsed::Primary,
         fallback_count: 0,
-        haiku_invocations: 1,
-        sonnet_invocations: 0,
+        primary_invocations: 1,
+        escalation_invocations: 0,
     };
 
     let packet_set = build_packet_set(
@@ -600,10 +600,10 @@ fn low_confidence_structured_packet_does_not_emit_context_flag() {
     let decision = StructuringDecision {
         rule: assess(&event),
         model_response: Some(response(0.7, TerminalDecision::LowConfidenceStructured)),
-        model_tier_used: ModelTierUsed::Haiku,
+        model_tier_used: ModelTierUsed::Primary,
         fallback_count: 0,
-        haiku_invocations: 1,
-        sonnet_invocations: 0,
+        primary_invocations: 1,
+        escalation_invocations: 0,
     };
 
     let packet_set = build_packet_set(
@@ -632,10 +632,10 @@ fn funding_shift_without_available_market_context_does_not_emit_context_flag() {
     let decision = StructuringDecision {
         rule: assess(&event),
         model_response: Some(model),
-        model_tier_used: ModelTierUsed::Sonnet,
+        model_tier_used: ModelTierUsed::Escalation,
         fallback_count: 0,
-        haiku_invocations: 1,
-        sonnet_invocations: 1,
+        primary_invocations: 1,
+        escalation_invocations: 1,
     };
 
     let packet_set = build_packet_set(
@@ -660,10 +660,10 @@ fn weak_symbol_packet_does_not_emit_context_flag() {
     let decision = StructuringDecision {
         rule: assess(&event),
         model_response: Some(weak_model),
-        model_tier_used: ModelTierUsed::Haiku,
+        model_tier_used: ModelTierUsed::Primary,
         fallback_count: 0,
-        haiku_invocations: 1,
-        sonnet_invocations: 0,
+        primary_invocations: 1,
+        escalation_invocations: 0,
     };
 
     let packet_set = build_packet_set(
@@ -681,15 +681,18 @@ fn weak_symbol_packet_does_not_emit_context_flag() {
 }
 
 fn policy(enable_bedrock: bool) -> ModelPolicyConfig {
-    policy_with_sonnet_budget(enable_bedrock, 0.15)
+    policy_with_escalation_budget(enable_bedrock, 0.15)
 }
 
-fn policy_with_sonnet_budget(enable_bedrock: bool, sonnet_budget_ratio: f64) -> ModelPolicyConfig {
+fn policy_with_escalation_budget(
+    enable_bedrock: bool,
+    escalation_budget_ratio: f64,
+) -> ModelPolicyConfig {
     ModelPolicyConfig {
         primary_model_id: DEFAULT_PRIMARY_MODEL_ID.to_owned(),
         escalation_model_id: DEFAULT_ESCALATION_MODEL_ID.to_owned(),
         escalate_if_confidence_below: 0.65,
-        sonnet_budget_ratio,
+        escalation_budget_ratio,
         enable_bedrock,
     }
 }

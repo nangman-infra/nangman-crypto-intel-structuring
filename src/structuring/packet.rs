@@ -220,8 +220,8 @@ pub fn build_packet_set(
         cluster_count: 1,
         structured_packet_count: 1,
         flag_packet_count: usize::from(context_flag_packet.is_some()),
-        model_l0_invocations: decision.haiku_invocations,
-        model_l1_invocations: decision.sonnet_invocations,
+        model_l0_invocations: decision.primary_invocations,
+        model_l1_invocations: decision.escalation_invocations,
         fallback_count: decision.fallback_count,
         conflict_high_count: usize::from(story_cluster.conflict_level == ConflictLevel::High),
         health_level: if decision.fallback_count > 0 {

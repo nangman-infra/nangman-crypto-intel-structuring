@@ -367,8 +367,8 @@ where
             ack_ready: true,
             fallback_count: packet_set.health_event.fallback_count,
             conflict_count: packet_set.structured_packet.contradiction_flags.len(),
-            haiku_invocation_count: packet_set.health_event.model_l0_invocations,
-            sonnet_invocation_count: packet_set.health_event.model_l1_invocations,
+            primary_invocation_count: packet_set.health_event.model_l0_invocations,
+            escalation_invocation_count: packet_set.health_event.model_l1_invocations,
             numeric_snapshot_count: usize::from(is_numeric_market_snapshot(&raw_event)),
             stale_market_context_count: usize::from(
                 packet_set
@@ -376,7 +376,7 @@ where
                     .market_context_status
                     .is_stale_but_usable(),
             ),
-            sonnet_on_numeric_snapshot_count: usize::from(
+            escalation_on_numeric_snapshot_count: usize::from(
                 is_numeric_market_snapshot(&raw_event)
                     && packet_set.health_event.model_l1_invocations > 0,
             ),
@@ -390,8 +390,8 @@ where
                 "model_tier_used": packet_set.structured_packet.model_tier_used,
                 "market_context_status": packet_set.structured_packet.market_context_status,
                 "evidence_quality_reasons": packet_set.structured_packet.evidence_quality_reasons,
-                "haiku_invocations": packet_set.health_event.model_l0_invocations,
-                "sonnet_invocations": packet_set.health_event.model_l1_invocations,
+                "primary_invocations": packet_set.health_event.model_l0_invocations,
+                "escalation_invocations": packet_set.health_event.model_l1_invocations,
                 "manifest_sha256": sha256_prefixed(&manifest_bytes),
                 "ack_ready": true
             }))?

@@ -5,7 +5,9 @@ use crate::error::{AppError, AppResult};
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_bedrockruntime::Client;
-use aws_smithy_types::Blob;
+use aws_sdk_bedrockruntime::types::{
+    ContentBlock, ConversationRole, InferenceConfiguration, Message, SystemContentBlock,
+};
 use aws_types::region::Region;
 use serde_json::json;
 
@@ -48,8 +50,8 @@ impl BedrockModelProvider {
 
     fn model_id(&self, stage: ModelStage) -> &str {
         match stage {
-            ModelStage::Haiku | ModelStage::HaikuRepair => &self.config.primary_model_id,
-            ModelStage::Sonnet => &self.config.escalation_model_id,
+            ModelStage::Primary | ModelStage::PrimaryRepair => &self.config.primary_model_id,
+            ModelStage::Escalation => &self.config.escalation_model_id,
         }
     }
 }
@@ -65,53 +67,34 @@ impl ModelProvider for BedrockModelProvider {
             return Err(AppError::bedrock("Bedrock model provider disabled"));
         };
         let static_prompt = build_static_prompt(stage);
-        let dynamic_prompt = build_dynamic_prompt(stage, request, self.config.max_input_chars);
+        let dynamic_prompt = build_dynamic_prompt(request, self.config.max_input_chars);
         let max_tokens = match stage {
-            ModelStage::Haiku | ModelStage::HaikuRepair => self.config.max_output_tokens.min(800),
-            ModelStage::Sonnet => self.config.max_output_tokens,
-        };
-        let body = json!({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": max_tokens,
-            "temperature": self.config.temperature,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": static_prompt,
-                        "cache_control": {
-                            "type": "ephemeral",
-                            "ttl": "1h"
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": dynamic_prompt
-                    }
-                ]
-            }],
-            "output_config": {
-                "format": {
-                    "type": "json_schema",
-                    "schema": model_response_schema()
-                }
+            ModelStage::Primary | ModelStage::PrimaryRepair => {
+                self.config.max_output_tokens.min(800)
             }
-        });
+            ModelStage::Escalation => self.config.max_output_tokens,
+        };
+        let message = Message::builder()
+            .role(ConversationRole::User)
+            .content(ContentBlock::Text(dynamic_prompt))
+            .build()
+            .map_err(|error| AppError::bedrock(format!("build Converse message: {error}")))?;
+        let inference_config = InferenceConfiguration::builder()
+            .max_tokens(max_tokens)
+            .temperature(self.config.temperature)
+            .build();
         let output = client
-            .invoke_model()
+            .converse()
             .model_id(self.model_id(stage))
-            .content_type("application/json")
-            .accept("application/json")
-            .body(Blob::new(serde_json::to_vec(&body)?))
+            .system(SystemContentBlock::Text(static_prompt))
+            .messages(message)
+            .inference_config(inference_config)
             .send()
             .await
             .map_err(|error| {
-                AppError::bedrock(format!("invoke_model {}: {error}", self.model_id(stage)))
+                AppError::bedrock(format!("converse {}: {error}", self.model_id(stage)))
             })?;
-        let bytes = output.body.as_ref();
-        let response_json: serde_json::Value = serde_json::from_slice(bytes)?;
-        let text = extract_anthropic_text(&response_json)?;
+        let text = extract_converse_text(&output)?;
         let mut parsed: ModelStructuringResponse =
             serde_json::from_str(extract_json_object(&text)?)?;
         parsed.hydrate_evidence_sentences(&request.evidence_pack)?;
@@ -122,14 +105,15 @@ impl ModelProvider for BedrockModelProvider {
 
 fn build_static_prompt(stage: ModelStage) -> String {
     let role = match stage {
-        ModelStage::Haiku => "Primary extractor. Be conservative and finish safe cases.",
-        ModelStage::HaikuRepair => {
+        ModelStage::Primary => "Primary extractor. Be conservative and finish safe cases.",
+        ModelStage::PrimaryRepair => {
             "Repair extractor. Fix only schema, evidence IDs, and confidence consistency."
         }
-        ModelStage::Sonnet => {
+        ModelStage::Escalation => {
             "Escalation adjudicator. Resolve high impact ambiguity and produce a terminal decision."
         }
     };
+    let schema = model_response_schema();
     format!(
         r#"You are INTEL-L1, a crypto market intelligence structuring worker.
 
@@ -170,15 +154,18 @@ title_body_mismatch, evidence_weak
 Allowed terminal_decision values:
 high_confidence_structured, low_confidence_structured, general_market_context,
 conflicted, unsupported_or_weak, irrelevant_or_noise
+
+Output contract:
+- Return exactly one JSON object.
+- Do not wrap the JSON in markdown.
+- Do not include commentary before or after the JSON.
+- The JSON object must satisfy this schema:
+{schema}
 "#
     )
 }
 
-fn build_dynamic_prompt(
-    stage: ModelStage,
-    request: &ModelStructuringRequest,
-    max_input_chars: usize,
-) -> String {
+fn build_dynamic_prompt(request: &ModelStructuringRequest, max_input_chars: usize) -> String {
     let body = if request.body.chars().count() > max_input_chars {
         request
             .body
@@ -188,9 +175,10 @@ fn build_dynamic_prompt(
     } else {
         request.body.clone()
     };
-    let body_section = match stage {
-        ModelStage::Sonnet => format!("body_excerpt: {}\n", body),
-        ModelStage::Haiku | ModelStage::HaikuRepair => String::new(),
+    let body_section = if body.trim().is_empty() {
+        String::new()
+    } else {
+        format!("body_excerpt: {}\n", body)
     };
     let repair_context = request
         .repair_context
@@ -339,17 +327,26 @@ fn model_response_schema() -> serde_json::Value {
     })
 }
 
-fn extract_anthropic_text(response_json: &serde_json::Value) -> AppResult<String> {
-    response_json
-        .get("content")
-        .and_then(|value| value.as_array())
-        .and_then(|items| {
-            items
-                .iter()
-                .find_map(|item| item.get("text").and_then(|text| text.as_str()))
-        })
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| AppError::bedrock("Bedrock response did not contain text content"))
+fn extract_converse_text(
+    output: &aws_sdk_bedrockruntime::operation::converse::ConverseOutput,
+) -> AppResult<String> {
+    let message = output
+        .output()
+        .and_then(|value| value.as_message().ok())
+        .ok_or_else(|| AppError::bedrock("Bedrock Converse response did not contain a message"))?;
+    let text = message
+        .content()
+        .iter()
+        .filter_map(|block| block.as_text().ok())
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.trim().is_empty() {
+        return Err(AppError::bedrock(
+            "Bedrock Converse response did not contain text content",
+        ));
+    }
+    Ok(text)
 }
 
 fn extract_json_object(text: &str) -> AppResult<&str> {

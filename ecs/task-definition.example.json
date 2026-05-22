@@ -34,7 +34,7 @@
       ],
       "environment": [
         { "name": "AWS_REGION", "value": "ap-northeast-2" },
-        { "name": "BEDROCK_REGION", "value": "ap-northeast-2" },
+        { "name": "BEDROCK_REGION", "value": "us-east-1" },
         { "name": "INTEL_L1_ENABLE_BEDROCK", "value": "true" },
         { "name": "INTEL_L1_L0_RUSTFS_ENDPOINT", "value": "https://s3.nangman.cloud" },
         { "name": "INTEL_L1_L0_RUSTFS_BUCKET", "value": "intel-crawl-app-l0" },
@@ -53,10 +53,10 @@
         { "name": "INTEL_L1_RAW_MAX_DELIVER", "value": "20" },
         { "name": "INTEL_L1_RAW_BATCH_SIZE", "value": "1" },
         { "name": "INTEL_L1_RAW_DELIVER_POLICY", "value": "new" },
-        { "name": "INTEL_L1_PRIMARY_MODEL_ID", "value": "global.anthropic.claude-haiku-4-5-20251001-v1:0" },
-        { "name": "INTEL_L1_ESCALATION_MODEL_ID", "value": "global.anthropic.claude-sonnet-4-6" },
+        { "name": "INTEL_L1_PRIMARY_MODEL_ID", "value": "us.meta.llama4-scout-17b-instruct-v1:0" },
+        { "name": "INTEL_L1_ESCALATION_MODEL_ID", "value": "us.meta.llama4-maverick-17b-instruct-v1:0" },
         { "name": "INTEL_L1_ESCALATE_IF_CONFIDENCE_BELOW", "value": "0.65" },
-        { "name": "INTEL_L1_SONNET_BUDGET_RATIO", "value": "0.15" }
+        { "name": "INTEL_L1_ESCALATION_BUDGET_RATIO", "value": "0.15" }
       ],
       "secrets": [
         {

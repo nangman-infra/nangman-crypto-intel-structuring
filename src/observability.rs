@@ -14,11 +14,11 @@ pub struct ProcessingMetric {
     pub ack_ready: bool,
     pub fallback_count: usize,
     pub conflict_count: usize,
-    pub haiku_invocation_count: usize,
-    pub sonnet_invocation_count: usize,
+    pub primary_invocation_count: usize,
+    pub escalation_invocation_count: usize,
     pub numeric_snapshot_count: usize,
     pub stale_market_context_count: usize,
-    pub sonnet_on_numeric_snapshot_count: usize,
+    pub escalation_on_numeric_snapshot_count: usize,
 }
 
 pub fn emit_processing_metric(metric: &ProcessingMetric) -> AppResult<()> {
@@ -33,11 +33,11 @@ pub fn emit_processing_metric(metric: &ProcessingMetric) -> AppResult<()> {
                     {"Name": "AckReadyCount", "Unit": "Count"},
                     {"Name": "FallbackCount", "Unit": "Count"},
                     {"Name": "ConflictCount", "Unit": "Count"},
-                    {"Name": "HaikuInvocationCount", "Unit": "Count"},
-                    {"Name": "SonnetInvocationCount", "Unit": "Count"},
+                    {"Name": "PrimaryInvocationCount", "Unit": "Count"},
+                    {"Name": "EscalationInvocationCount", "Unit": "Count"},
                     {"Name": "NumericSnapshotCount", "Unit": "Count"},
                     {"Name": "StaleMarketContextCount", "Unit": "Count"},
-                    {"Name": "SonnetOnNumericSnapshotCount", "Unit": "Count"}
+                    {"Name": "EscalationOnNumericSnapshotCount", "Unit": "Count"}
                 ]
             }]
         },
@@ -49,11 +49,11 @@ pub fn emit_processing_metric(metric: &ProcessingMetric) -> AppResult<()> {
         "AckReadyCount": usize::from(metric.ack_ready),
         "FallbackCount": metric.fallback_count,
         "ConflictCount": metric.conflict_count,
-        "HaikuInvocationCount": metric.haiku_invocation_count,
-        "SonnetInvocationCount": metric.sonnet_invocation_count,
+        "PrimaryInvocationCount": metric.primary_invocation_count,
+        "EscalationInvocationCount": metric.escalation_invocation_count,
         "NumericSnapshotCount": metric.numeric_snapshot_count,
         "StaleMarketContextCount": metric.stale_market_context_count,
-        "SonnetOnNumericSnapshotCount": metric.sonnet_on_numeric_snapshot_count,
+        "EscalationOnNumericSnapshotCount": metric.escalation_on_numeric_snapshot_count,
         "raw_event_id": metric.raw_event_id,
         "packet_id": metric.packet_id
     });

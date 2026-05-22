@@ -41,7 +41,7 @@
     "reason_summary": { "type": "string" },
     "model_tier_used": {
       "type": "string",
-      "enum": ["rule_only", "haiku", "sonnet", "fallback_only"]
+      "enum": ["rule_only", "primary", "escalation", "fallback_only"]
     },
     "schema_version": { "const": "context_flag_packet_v1" }
   },

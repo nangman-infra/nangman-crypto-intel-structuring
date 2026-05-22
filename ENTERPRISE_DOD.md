@@ -10,12 +10,12 @@ The app is not complete until all items pass:
 - Market-L1 compact symbol summaries are included in model prompts when available.
 - Rule-only output is blocked for weak raw evidence such as community reaction, market snapshot, title-only, or metadata fallback inputs.
 - Rule/NLP/NLI runs before any model call.
-- Claude Haiku 4.5 Global is the primary online model when enabled.
-- Haiku receives bounded evidence IDs instead of unconstrained full-body prompts.
-- Haiku repair is attempted for local evidence/schema gate misses before Sonnet escalation.
-- Claude Sonnet 4.6 Global is the final escalation model when enabled.
-- Sonnet is reserved for hard, high-risk, high-impact, conflicting, weak global symbol-scan, or low quality-score claims and produces a terminal decision except broken input quarantine cases.
-- Low-confidence numeric market snapshots without available Market-L1 context must stop at Haiku instead of escalating to Sonnet.
+- Llama 4 Scout is the primary online model when enabled.
+- The primary model receives bounded evidence IDs and capped body excerpts instead of unconstrained full-body prompts.
+- Primary repair is attempted for local evidence/schema gate misses before escalation.
+- Llama 4 Maverick is the final escalation model when enabled.
+- Escalation is reserved for hard, high-risk, high-impact, conflicting, weak global symbol-scan, or low quality-score claims and produces a terminal decision except broken input quarantine cases.
+- Low-confidence numeric market snapshots without available Market-L1 context must stop at primary instead of escalating.
 - Context flags are emitted only for terminal high-confidence or general-market outputs, and funding flags require available Market-L1 context.
 - Story members are written as immutable S3 objects and refreshed story clusters merge prior sources.
 - Structured packet, context flag, story cluster, health event, manifest, and prepared index are written before NATS publish.
