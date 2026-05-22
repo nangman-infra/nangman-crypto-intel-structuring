@@ -12,7 +12,7 @@
       "description": "On-prem NATS endpoint reachable over VPN or trusted LAN routing.",
       "variables": {
         "nats_host": {
-          "default": "192.168.10.45"
+          "default": "<private-nats-host>"
         },
         "nats_port": {
           "default": "4222"

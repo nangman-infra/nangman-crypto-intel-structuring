@@ -18,10 +18,10 @@ pub const DEFAULT_HEALTH_SUBJECT: &str = "structuring_health_event.created";
 pub const DEFAULT_RUSTFS_ENDPOINT: &str = "https://s3.nangman.cloud";
 pub const DEFAULT_RUSTFS_BUCKET: &str = "intel-crawl-app-l0";
 pub const DEFAULT_RUSTFS_REGION: &str = "us-east-1";
-pub const DEFAULT_OUTPUT_BUCKET: &str = "nangman-crypto-dev-intel-structuring-l1-962214";
+pub const DEFAULT_OUTPUT_BUCKET: &str = "nangman-crypto-dev-intel-structuring-l1-<account-suffix>";
 pub const DEFAULT_AWS_REGION: &str = "ap-northeast-2";
 pub const DEFAULT_BEDROCK_REGION: &str = "us-east-1";
-pub const DEFAULT_MARKET_L1_BUCKET: &str = "nangman-crypto-dev-market-ingest-l1-962214";
+pub const DEFAULT_MARKET_L1_BUCKET: &str = "nangman-crypto-dev-market-ingest-l1-<account-suffix>";
 pub const DEFAULT_MARKET_L1_WINDOW_MS: i64 = 1_000;
 pub const DEFAULT_MARKET_CONTEXT_LATEST_BEFORE_LOOKBACK_MS: i64 = 6 * 60 * 60 * 1_000;
 pub const DEFAULT_MARKET_CONTEXT_STALE_AFTER_MS: i64 = 10 * 60 * 1_000;
@@ -305,9 +305,9 @@ impl Args {
 
     fn validate(&self) -> AppResult<()> {
         validate_non_empty(&self.nats.url, "NATS_URL")?;
-        validate_non_empty(&self.output_store.bucket, "INTEL_L1_OUTPUT_S3_BUCKET")?;
-        validate_non_empty(&self.market_l1_store.bucket, "INTEL_L1_MARKET_L1_BUCKET")?;
-        validate_non_empty(&self.rustfs_store.bucket, "INTEL_L1_L0_RUSTFS_BUCKET")?;
+        validate_real_config_value(&self.output_store.bucket, "INTEL_L1_OUTPUT_S3_BUCKET")?;
+        validate_real_config_value(&self.market_l1_store.bucket, "INTEL_L1_MARKET_L1_BUCKET")?;
+        validate_real_config_value(&self.rustfs_store.bucket, "INTEL_L1_L0_RUSTFS_BUCKET")?;
         if self.market_l1_window_ms <= 0 {
             return Err(AppError::config(
                 "INTEL_L1_MARKET_WINDOW_MS must be positive",
@@ -417,6 +417,16 @@ fn validate_non_empty(value: &str, name: &str) -> AppResult<()> {
     }
 }
 
+fn validate_real_config_value(value: &str, name: &str) -> AppResult<()> {
+    validate_non_empty(value, name)?;
+    if value.contains('<') || value.contains('>') {
+        return Err(AppError::config(format!(
+            "{name} must be set to a real value, not a public-doc placeholder"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_ratio(value: f64, name: &str) -> AppResult<()> {
     if !(0.0..=1.0).contains(&value) {
         Err(AppError::config(format!("{name} must be between 0 and 1")))
@@ -512,6 +522,10 @@ mod tests {
                 "true",
                 "--enable-bedrock",
                 "false",
+                "--output-bucket",
+                "test-intel-structuring-l1",
+                "--market-l1-bucket",
+                "test-market-l1",
             ]
             .into_iter()
             .map(str::to_owned),
@@ -540,6 +554,10 @@ mod tests {
                 "ap-northeast-2",
                 "--bedrock-region",
                 "us-east-1",
+                "--output-bucket",
+                "test-intel-structuring-l1",
+                "--market-l1-bucket",
+                "test-market-l1",
             ]
             .into_iter()
             .map(str::to_owned),
@@ -549,5 +567,24 @@ mod tests {
         assert_eq!(args.output_store.region, "ap-northeast-2");
         assert_eq!(args.market_l1_store.region, "ap-northeast-2");
         assert_eq!(args.bedrock.region, "us-east-1");
+    }
+
+    #[test]
+    fn rejects_public_doc_bucket_placeholder() {
+        let err = Args::parse(
+            [
+                "intel-structuring-app",
+                "--output-bucket",
+                DEFAULT_OUTPUT_BUCKET,
+                "--market-l1-bucket",
+                "test-market-l1",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("INTEL_L1_OUTPUT_S3_BUCKET"));
+        assert!(err.to_string().contains("public-doc placeholder"));
     }
 }

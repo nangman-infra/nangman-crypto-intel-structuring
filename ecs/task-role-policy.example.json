@@ -6,8 +6,8 @@
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:ListBucket"],
       "Resource": [
-        "arn:aws:s3:::nangman-crypto-dev-market-ingest-l1-962214",
-        "arn:aws:s3:::nangman-crypto-dev-market-ingest-l1-962214/*"
+        "arn:aws:s3:::nangman-crypto-dev-market-ingest-l1-<account-suffix>",
+        "arn:aws:s3:::nangman-crypto-dev-market-ingest-l1-<account-suffix>/*"
       ]
     },
     {
@@ -15,8 +15,8 @@
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
       "Resource": [
-        "arn:aws:s3:::nangman-crypto-dev-intel-structuring-l1-962214",
-        "arn:aws:s3:::nangman-crypto-dev-intel-structuring-l1-962214/*"
+        "arn:aws:s3:::nangman-crypto-dev-intel-structuring-l1-<account-suffix>",
+        "arn:aws:s3:::nangman-crypto-dev-intel-structuring-l1-<account-suffix>/*"
       ]
     },
     {
