@@ -15,6 +15,9 @@ FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 COPY --from=builder --chown=nonroot:nonroot \
     /opt/nangman-crypto/intel-structuring/target/release/intel-structuring-app \
     /usr/local/bin/intel-structuring-app
+COPY --from=builder --chown=nonroot:nonroot \
+    /opt/nangman-crypto/intel-structuring/target/release/intel-l1-rehydration-worker \
+    /usr/local/bin/intel-l1-rehydration-worker
 
 USER nonroot:nonroot
 

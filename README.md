@@ -51,6 +51,8 @@ Rule-only output is blocked when the raw item is community reaction, market snap
 
 Single numeric derivatives snapshots are never allowed to use escalation. `stale_but_usable` market context is preserved in the packet as audit context, but it is not strong enough to open expensive model escalation for numeric snapshots. Non-critical safety escalation also respects `INTEL_L1_ESCALATION_BUDGET_RATIO` as a hard budget.
 
+`intel-l1-rehydration-worker` rechecks `pending` and `stale_but_usable` packets against newer Market-L1 windows. When a fresher non-stale market context exists, it writes a new structured packet revision and republishes the structured pointer so downstream candidate scoring can rerun without mutating the original packet.
+
 Llama 4 Scout and Maverick are intentionally used as low-cost generation models. Bedrock Structured Outputs are not assumed for these models, so the app treats the local Rust contract as the source of truth: prompt schema, JSON extraction, serde validation, evidence-ID hydration, deterministic repair, admission gates, and fallback/quarantine logic all run outside the model.
 
 ## Local run

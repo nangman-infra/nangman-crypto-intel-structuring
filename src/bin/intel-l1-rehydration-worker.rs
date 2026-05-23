@@ -3,7 +3,7 @@ use intel_structuring_app::error::{AppError, AppResult};
 use intel_structuring_app::market::reader::MarketL1Reader;
 use intel_structuring_app::nats::publisher::StructuredPublisher;
 use intel_structuring_app::storage::object_store::ObjectStore;
-use intel_structuring_app::workflow::rehydration::PendingMarketContextRehydrator;
+use intel_structuring_app::workflow::rehydration::MarketContextRehydrator;
 
 const DEFAULT_MAX_PACKETS: usize = 512;
 
@@ -21,17 +21,13 @@ async fn main() -> AppResult<()> {
         args.processing.market_context_stale_after_ms,
     );
     let publisher = StructuredPublisher::connect(&args.nats).await?;
-    let rehydrator = PendingMarketContextRehydrator::new(
-        output_store,
-        market_reader,
-        publisher,
-        args.processing,
-    );
+    let rehydrator =
+        MarketContextRehydrator::new(output_store, market_reader, publisher, args.processing);
     let published = rehydrator.run_once(max_packets).await?;
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({
-            "mode": "pending_market_context_rehydration",
+            "mode": "market_context_rehydration",
             "max_packets": max_packets,
             "published_revisions": published,
         }))?

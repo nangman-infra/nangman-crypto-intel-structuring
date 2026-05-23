@@ -17,14 +17,14 @@ use crate::workflow::keys;
 const STRUCTURED_PACKET_PREFIX: &str = "structured-intel-packet/schema=structured_intel_packet_v1/";
 const REVISION_INDEX_MAX_KEYS: usize = 256;
 
-pub struct PendingMarketContextRehydrator {
+pub struct MarketContextRehydrator {
     output_store: ObjectStore,
     market_reader: MarketL1Reader,
     publisher: StructuredPublisher,
     config: ProcessingConfig,
 }
 
-impl PendingMarketContextRehydrator {
+impl MarketContextRehydrator {
     pub fn new(
         output_store: ObjectStore,
         market_reader: MarketL1Reader,
@@ -56,7 +56,7 @@ impl PendingMarketContextRehydrator {
     async fn try_rehydrate_key(&self, key: &str) -> AppResult<bool> {
         let bytes = self.output_store.get_bytes(key).await?;
         let packet: StructuredIntelPacket = serde_json::from_slice(&bytes)?;
-        if packet.market_context_status != MarketContextStatus::Pending {
+        if !should_attempt_market_context_refresh(&packet.market_context_status) {
             return Ok(false);
         }
         if packet.market_context_terminal_reason.is_some() {
@@ -80,21 +80,25 @@ impl PendingMarketContextRehydrator {
                 &packet.normalized_symbols,
             )
             .await;
-        if refreshed_context.status.is_any_available() {
+        if refreshed_context_warrants_revision(
+            &packet.market_context_status,
+            &refreshed_context.status,
+        ) {
             self.publish_revision(packet, refreshed_context, None)
                 .await?;
             return Ok(true);
         }
-        if packet
-            .market_context_expire_at_ms
-            .or_else(|| {
-                Some(
-                    packet
-                        .decision_available_at_ms
-                        .saturating_add(self.config.market_context_expire_after_ms),
-                )
-            })
-            .is_some_and(|expire_at_ms| expire_at_ms <= now_ms())
+        if packet.market_context_status == MarketContextStatus::Pending
+            && packet
+                .market_context_expire_at_ms
+                .or_else(|| {
+                    Some(
+                        packet
+                            .decision_available_at_ms
+                            .saturating_add(self.config.market_context_expire_after_ms),
+                    )
+                })
+                .is_some_and(|expire_at_ms| expire_at_ms <= now_ms())
         {
             let basis_kind = if packet.published_at_ms.is_some() {
                 "published_at_ms"
@@ -259,6 +263,29 @@ impl PendingMarketContextRehydrator {
     }
 }
 
+fn should_attempt_market_context_refresh(status: &MarketContextStatus) -> bool {
+    matches!(
+        status,
+        MarketContextStatus::Pending | MarketContextStatus::StaleButUsable
+    )
+}
+
+fn refreshed_context_warrants_revision(
+    current: &MarketContextStatus,
+    refreshed: &MarketContextStatus,
+) -> bool {
+    if !refreshed.is_any_available() {
+        return false;
+    }
+    match current {
+        MarketContextStatus::Pending => true,
+        MarketContextStatus::StaleButUsable => {
+            !matches!(refreshed, MarketContextStatus::StaleButUsable)
+        }
+        _ => false,
+    }
+}
+
 fn parse_revision_from_key(key: &str) -> Option<u32> {
     key.strip_suffix(".json")?
         .rsplit_once("revision=")?
@@ -291,7 +318,11 @@ fn effective_raw_event_id(packet: &StructuredIntelPacket) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_revision_from_key;
+    use super::{
+        parse_revision_from_key, refreshed_context_warrants_revision,
+        should_attempt_market_context_refresh,
+    };
+    use crate::models::market::MarketContextStatus;
 
     #[test]
     fn parses_revision_index_key() {
@@ -301,5 +332,46 @@ mod tests {
             ),
             Some(7)
         );
+    }
+
+    #[test]
+    fn refresh_candidates_include_pending_and_stale_but_usable() {
+        assert!(should_attempt_market_context_refresh(
+            &MarketContextStatus::Pending
+        ));
+        assert!(should_attempt_market_context_refresh(
+            &MarketContextStatus::StaleButUsable
+        ));
+        assert!(!should_attempt_market_context_refresh(
+            &MarketContextStatus::AvailableSymbolContext
+        ));
+    }
+
+    #[test]
+    fn pending_context_accepts_any_available_refresh() {
+        assert!(refreshed_context_warrants_revision(
+            &MarketContextStatus::Pending,
+            &MarketContextStatus::StaleButUsable
+        ));
+        assert!(!refreshed_context_warrants_revision(
+            &MarketContextStatus::Pending,
+            &MarketContextStatus::Unavailable
+        ));
+    }
+
+    #[test]
+    fn stale_context_requires_non_stale_available_refresh() {
+        assert!(refreshed_context_warrants_revision(
+            &MarketContextStatus::StaleButUsable,
+            &MarketContextStatus::NearestAvailable
+        ));
+        assert!(refreshed_context_warrants_revision(
+            &MarketContextStatus::StaleButUsable,
+            &MarketContextStatus::AvailableSymbolContext
+        ));
+        assert!(!refreshed_context_warrants_revision(
+            &MarketContextStatus::StaleButUsable,
+            &MarketContextStatus::StaleButUsable
+        ));
     }
 }
