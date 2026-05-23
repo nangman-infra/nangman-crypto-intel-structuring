@@ -1,5 +1,5 @@
 use crate::config::ProcessingConfig;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::hash::sha256_prefixed;
 use crate::market::reader::MarketL1Reader;
 use crate::models::constants::{MANIFEST_SCHEMA_VERSION, STRUCTURED_PACKET_SCHEMA_VERSION};
@@ -46,8 +46,13 @@ impl MarketContextRehydrator {
             .await?;
         let mut published = 0usize;
         for key in keys {
-            if self.try_rehydrate_key(&key).await? {
-                published += 1;
+            match self.try_rehydrate_key(&key).await {
+                Ok(true) => published += 1,
+                Ok(false) => {}
+                Err(error) if is_record_level_rehydration_error(&error) => {
+                    eprintln!("market context rehydration skipped key={key}: {error}");
+                }
+                Err(error) => return Err(error),
             }
         }
         Ok(published)
@@ -286,6 +291,10 @@ fn refreshed_context_warrants_revision(
     }
 }
 
+fn is_record_level_rehydration_error(error: &AppError) -> bool {
+    matches!(error, AppError::Json(_) | AppError::Validation(_))
+}
+
 fn parse_revision_from_key(key: &str) -> Option<u32> {
     key.strip_suffix(".json")?
         .rsplit_once("revision=")?
@@ -319,9 +328,10 @@ fn effective_raw_event_id(packet: &StructuredIntelPacket) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_revision_from_key, refreshed_context_warrants_revision,
-        should_attempt_market_context_refresh,
+        is_record_level_rehydration_error, parse_revision_from_key,
+        refreshed_context_warrants_revision, should_attempt_market_context_refresh,
     };
+    use crate::error::AppError;
     use crate::models::market::MarketContextStatus;
 
     #[test]
@@ -373,5 +383,19 @@ mod tests {
             &MarketContextStatus::StaleButUsable,
             &MarketContextStatus::StaleButUsable
         ));
+    }
+
+    #[test]
+    fn record_level_rehydration_errors_are_skippable() {
+        let json_error = serde_json::from_str::<serde_json::Value>("{").unwrap_err();
+        assert!(is_record_level_rehydration_error(&AppError::Json(
+            json_error
+        )));
+        assert!(is_record_level_rehydration_error(&AppError::validation(
+            "legacy packet"
+        )));
+        assert!(!is_record_level_rehydration_error(&AppError::aws(
+            "object store unavailable"
+        )));
     }
 }
