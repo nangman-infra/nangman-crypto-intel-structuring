@@ -13,6 +13,7 @@ use crate::storage::object_store::ObjectStore;
 use crate::structuring::packet::{market_context_ref, revised_packet_id};
 use crate::time::{now_ms, run_id};
 use crate::workflow::keys;
+use std::collections::BTreeSet;
 
 const STRUCTURED_PACKET_PREFIX: &str = "structured-intel-packet/schema=structured_intel_packet_v1/";
 const REVISION_INDEX_MAX_KEYS: usize = 256;
@@ -40,9 +41,17 @@ impl MarketContextRehydrator {
     }
 
     pub async fn run_once(&self, max_packets: usize) -> AppResult<usize> {
+        self.run_prefixes_once(&[STRUCTURED_PACKET_PREFIX.to_owned()], max_packets)
+            .await
+    }
+
+    pub async fn run_prefixes_once(
+        &self,
+        prefixes: &[String],
+        max_packets_per_prefix: usize,
+    ) -> AppResult<usize> {
         let keys = self
-            .output_store
-            .list_keys(STRUCTURED_PACKET_PREFIX, max_packets)
+            .list_rehydration_keys(prefixes, max_packets_per_prefix)
             .await?;
         let mut published = 0usize;
         for key in keys {
@@ -56,6 +65,24 @@ impl MarketContextRehydrator {
             }
         }
         Ok(published)
+    }
+
+    async fn list_rehydration_keys(
+        &self,
+        prefixes: &[String],
+        max_packets_per_prefix: usize,
+    ) -> AppResult<Vec<String>> {
+        let mut keys = BTreeSet::new();
+        for prefix in prefixes {
+            for key in self
+                .output_store
+                .list_keys(prefix, max_packets_per_prefix)
+                .await?
+            {
+                keys.insert(key);
+            }
+        }
+        Ok(keys.into_iter().collect())
     }
 
     async fn try_rehydrate_key(&self, key: &str) -> AppResult<bool> {
