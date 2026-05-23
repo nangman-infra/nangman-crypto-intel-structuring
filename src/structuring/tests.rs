@@ -476,6 +476,7 @@ fn numeric_snapshot_records_metric_guard_reasons() {
     let mut event = event();
     event.source_id = "derivatives_binance_usdm_open_interest_rest".to_owned();
     event.source_category = "funding".to_owned();
+    event.body = r#"{"symbol":"BTCUSDT","open_interest":"1042","event_time_ms":1}"#.to_owned();
     event.content_quality = Some("numeric_observation".to_owned());
     event.source_quality = Some("market_snapshot".to_owned());
     event.event_category_hint = Some("open_interest_snapshot".to_owned());
@@ -502,6 +503,10 @@ fn numeric_snapshot_records_metric_guard_reasons() {
     );
 
     assert_eq!(packet_set.structured_packet.metric_evidence.len(), 1);
+    assert_eq!(
+        packet_set.structured_packet.metric_evidence[0].value,
+        Some(1042.0)
+    );
     assert!(
         packet_set
             .structured_packet
