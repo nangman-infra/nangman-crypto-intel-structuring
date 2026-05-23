@@ -400,6 +400,9 @@ fn official_source_present(event: &RawIntelEvent) -> bool {
     .to_ascii_lowercase();
     source_text.contains("official")
         || source_text.contains("exchange")
+        || source_text.contains("binance")
+        || source_text.contains("upbit")
+        || source_text.contains("bithumb")
         || source_text.contains("project")
         || source_text.contains("notice")
 }

@@ -510,6 +510,12 @@ fn numeric_snapshot_records_metric_guard_reasons() {
     assert!(
         packet_set
             .structured_packet
+            .source_independence_summary
+            .official_source_present
+    );
+    assert!(
+        packet_set
+            .structured_packet
             .evidence_quality_reasons
             .contains(&EvidenceQualityReason::SingleNumericSnapshot)
     );
