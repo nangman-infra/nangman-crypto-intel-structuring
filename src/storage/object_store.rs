@@ -6,6 +6,7 @@ use aws_sdk_s3::config::Builder as S3ConfigBuilder;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_types::region::Region;
 use serde::Serialize;
+use std::env;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectStoreConfig {
@@ -32,12 +33,8 @@ impl ObjectStore {
         if let Some(profile) = config.profile {
             loader = loader.profile_name(profile);
         }
-        if let Some(endpoint) = config.endpoint {
-            loader = loader.endpoint_url(endpoint.trim_end_matches('/'));
-        }
         let sdk_config = loader.load().await;
-        let mut s3_builder =
-            S3ConfigBuilder::from(&sdk_config).force_path_style(config.force_path_style);
+        let mut s3_builder = S3ConfigBuilder::from(&sdk_config);
         if let (Some(access_key_id), Some(secret_access_key)) =
             (config.access_key_id, config.secret_access_key)
         {
@@ -332,11 +329,15 @@ fn validate_config(config: &ObjectStoreConfig) -> AppResult<()> {
     if config.region.trim().is_empty() {
         return Err(AppError::config("object store region is required"));
     }
-    if let Some(endpoint) = &config.endpoint
-        && !endpoint.starts_with("http://")
-        && !endpoint.starts_with("https://")
-    {
-        return Err(AppError::config("object store endpoint must be http(s)"));
+    if config.endpoint.is_some() || env_s3_endpoint_is_set() {
+        return Err(AppError::config(
+            "custom S3 endpoints are unsupported; use AWS S3 with IAM",
+        ));
+    }
+    if config.force_path_style || env_path_style_is_set() {
+        return Err(AppError::config(
+            "path-style S3 endpoints are unsupported; use AWS S3 with IAM",
+        ));
     }
     if config.access_key_id.is_some() != config.secret_access_key.is_some() {
         return Err(AppError::config(
@@ -344,6 +345,33 @@ fn validate_config(config: &ObjectStoreConfig) -> AppResult<()> {
         ));
     }
     Ok(())
+}
+
+fn env_s3_endpoint_is_set() -> bool {
+    env_non_empty("AWS_ENDPOINT_URL_S3")
+        || env_non_empty("AWS_ENDPOINT_URL")
+        || env_non_empty("INTEL_L1_OUTPUT_S3_ENDPOINT")
+        || env_non_empty("INTEL_L1_MARKET_S3_ENDPOINT")
+}
+
+fn env_path_style_is_set() -> bool {
+    env_bool("AWS_S3_FORCE_PATH_STYLE")
+        || env_bool("AWS_USE_PATH_STYLE_ENDPOINT")
+        || env_bool("INTEL_L1_OUTPUT_S3_FORCE_PATH_STYLE")
+        || env_bool("INTEL_L1_MARKET_S3_FORCE_PATH_STYLE")
+}
+
+fn env_non_empty(name: &str) -> bool {
+    env::var(name)
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty())
+}
+
+fn env_bool(name: &str) -> bool {
+    env::var(name)
+        .ok()
+        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
 }
 
 fn is_precondition_failure(message: &str) -> bool {
@@ -357,9 +385,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_invalid_endpoint() {
+    fn rejects_custom_endpoint() {
         let config = ObjectStoreConfig {
-            endpoint: Some("ftp://example.com".to_owned()),
+            endpoint: Some("https://s3.example.com".to_owned()),
             bucket: "b".to_owned(),
             region: "us-east-1".to_owned(),
             force_path_style: false,
@@ -367,7 +395,23 @@ mod tests {
             access_key_id: None,
             secret_access_key: None,
         };
-        assert!(validate_config(&config).is_err());
+        let err = validate_config(&config).unwrap_err();
+        assert!(err.to_string().contains("custom S3 endpoints"));
+    }
+
+    #[test]
+    fn rejects_path_style_endpoint_mode() {
+        let config = ObjectStoreConfig {
+            endpoint: None,
+            bucket: "b".to_owned(),
+            region: "us-east-1".to_owned(),
+            force_path_style: true,
+            profile: None,
+            access_key_id: None,
+            secret_access_key: None,
+        };
+        let err = validate_config(&config).unwrap_err();
+        assert!(err.to_string().contains("path-style S3 endpoints"));
     }
 
     #[test]
