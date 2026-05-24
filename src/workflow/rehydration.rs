@@ -18,6 +18,19 @@ use std::collections::BTreeSet;
 
 const STRUCTURED_PACKET_PREFIX: &str = "structured-intel-packet/schema=structured_intel_packet_v1/";
 const REVISION_INDEX_MAX_KEYS: usize = 256;
+const TERMINAL_MISSING_MARKET_CONTEXT: &str = "terminal_missing_market_context";
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MarketContextRehydrationOptions {
+    pub include_terminal_missing_market_context: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MarketContextRehydrationSummary {
+    pub scanned_keys: usize,
+    pub published_revisions: usize,
+    pub skipped_record_errors: usize,
+}
 
 pub struct MarketContextRehydrator {
     output_store: ObjectStore,
@@ -42,8 +55,23 @@ impl MarketContextRehydrator {
     }
 
     pub async fn run_once(&self, max_packets: usize) -> AppResult<usize> {
-        self.run_prefixes_once(&[STRUCTURED_PACKET_PREFIX.to_owned()], max_packets)
-            .await
+        Ok(self
+            .run_once_with_options(max_packets, MarketContextRehydrationOptions::default())
+            .await?
+            .published_revisions)
+    }
+
+    pub async fn run_once_with_options(
+        &self,
+        max_packets: usize,
+        options: MarketContextRehydrationOptions,
+    ) -> AppResult<MarketContextRehydrationSummary> {
+        self.run_prefixes_once_with_options(
+            &[STRUCTURED_PACKET_PREFIX.to_owned()],
+            max_packets,
+            options,
+        )
+        .await
     }
 
     pub async fn run_prefixes_once(
@@ -51,21 +79,41 @@ impl MarketContextRehydrator {
         prefixes: &[String],
         max_packets_per_prefix: usize,
     ) -> AppResult<usize> {
+        Ok(self
+            .run_prefixes_once_with_options(
+                prefixes,
+                max_packets_per_prefix,
+                MarketContextRehydrationOptions::default(),
+            )
+            .await?
+            .published_revisions)
+    }
+
+    pub async fn run_prefixes_once_with_options(
+        &self,
+        prefixes: &[String],
+        max_packets_per_prefix: usize,
+        options: MarketContextRehydrationOptions,
+    ) -> AppResult<MarketContextRehydrationSummary> {
         let keys = self
             .list_rehydration_keys(prefixes, max_packets_per_prefix)
             .await?;
-        let mut published = 0usize;
+        let mut summary = MarketContextRehydrationSummary {
+            scanned_keys: keys.len(),
+            ..MarketContextRehydrationSummary::default()
+        };
         for key in keys {
-            match self.try_rehydrate_key(&key).await {
-                Ok(true) => published += 1,
+            match self.try_rehydrate_key(&key, options).await {
+                Ok(true) => summary.published_revisions += 1,
                 Ok(false) => {}
                 Err(error) if is_record_level_rehydration_error(&error) => {
+                    summary.skipped_record_errors += 1;
                     eprintln!("market context rehydration skipped key={key}: {error}");
                 }
                 Err(error) => return Err(error),
             }
         }
-        Ok(published)
+        Ok(summary)
     }
 
     async fn list_rehydration_keys(
@@ -86,13 +134,19 @@ impl MarketContextRehydrator {
         Ok(keys.into_iter().collect())
     }
 
-    async fn try_rehydrate_key(&self, key: &str) -> AppResult<bool> {
+    async fn try_rehydrate_key(
+        &self,
+        key: &str,
+        options: MarketContextRehydrationOptions,
+    ) -> AppResult<bool> {
         let bytes = self.output_store.get_bytes(key).await?;
         let packet: StructuredIntelPacket = serde_json::from_slice(&bytes)?;
-        if !should_attempt_market_context_refresh(&packet.market_context_status) {
+        let terminal_reopen =
+            is_terminal_missing_market_context_reopen_candidate(&packet, &options);
+        if !should_attempt_market_context_refresh(&packet, &options) {
             return Ok(false);
         }
-        if packet.market_context_terminal_reason.is_some() {
+        if packet.market_context_terminal_reason.is_some() && !terminal_reopen {
             return Ok(false);
         }
         if packet
@@ -116,6 +170,7 @@ impl MarketContextRehydrator {
         if refreshed_context_warrants_revision(
             &packet.market_context_status,
             &refreshed_context.status,
+            terminal_reopen,
         ) {
             self.publish_revision(packet, refreshed_context, None)
                 .await?;
@@ -139,11 +194,11 @@ impl MarketContextRehydrator {
                 "fetched_at_ms"
             };
             let terminal_context =
-                MarketContextSnapshot::unavailable("terminal_missing_market_context", basis_kind);
+                MarketContextSnapshot::unavailable(TERMINAL_MISSING_MARKET_CONTEXT, basis_kind);
             self.publish_revision(
                 packet,
                 terminal_context,
-                Some("terminal_missing_market_context".to_owned()),
+                Some(TERMINAL_MISSING_MARKET_CONTEXT.to_owned()),
             )
             .await?;
             return Ok(true);
@@ -336,19 +391,35 @@ fn build_revision_write_plan(
     })
 }
 
-fn should_attempt_market_context_refresh(status: &MarketContextStatus) -> bool {
+fn should_attempt_market_context_refresh(
+    packet: &StructuredIntelPacket,
+    options: &MarketContextRehydrationOptions,
+) -> bool {
     matches!(
-        status,
+        packet.market_context_status,
         MarketContextStatus::Pending | MarketContextStatus::StaleButUsable
-    )
+    ) || is_terminal_missing_market_context_reopen_candidate(packet, options)
+}
+
+fn is_terminal_missing_market_context_reopen_candidate(
+    packet: &StructuredIntelPacket,
+    options: &MarketContextRehydrationOptions,
+) -> bool {
+    options.include_terminal_missing_market_context
+        && packet.market_context_status == MarketContextStatus::Unavailable
+        && packet.market_context_terminal_reason.as_deref() == Some(TERMINAL_MISSING_MARKET_CONTEXT)
 }
 
 fn refreshed_context_warrants_revision(
     current: &MarketContextStatus,
     refreshed: &MarketContextStatus,
+    terminal_reopen: bool,
 ) -> bool {
     if !refreshed.is_any_available() {
         return false;
+    }
+    if terminal_reopen {
+        return true;
     }
     match current {
         MarketContextStatus::Pending => true,
@@ -396,8 +467,8 @@ fn effective_raw_event_id(packet: &StructuredIntelPacket) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_revision_write_plan, effective_packet_family_id, effective_raw_event_id,
-        is_record_level_rehydration_error, parse_revision_from_key,
+        MarketContextRehydrationOptions, build_revision_write_plan, effective_packet_family_id,
+        effective_raw_event_id, is_record_level_rehydration_error, parse_revision_from_key,
         refreshed_context_warrants_revision, should_attempt_market_context_refresh,
     };
     use crate::error::AppError;
@@ -421,14 +492,43 @@ mod tests {
 
     #[test]
     fn refresh_candidates_include_pending_and_stale_but_usable() {
-        assert!(should_attempt_market_context_refresh(
-            &MarketContextStatus::Pending
-        ));
-        assert!(should_attempt_market_context_refresh(
-            &MarketContextStatus::StaleButUsable
-        ));
+        let options = MarketContextRehydrationOptions::default();
+        let pending = packet_with_market_status(MarketContextStatus::Pending);
+        let stale = packet_with_market_status(MarketContextStatus::StaleButUsable);
+        let available = packet_with_market_status(MarketContextStatus::AvailableSymbolContext);
+
+        assert!(should_attempt_market_context_refresh(&pending, &options));
+        assert!(should_attempt_market_context_refresh(&stale, &options));
+        assert!(!should_attempt_market_context_refresh(&available, &options));
+    }
+
+    #[test]
+    fn terminal_missing_context_rehydration_requires_explicit_opt_in() {
+        let mut packet = packet_with_market_status(MarketContextStatus::Unavailable);
+        packet.market_context_terminal_reason = Some("terminal_missing_market_context".to_owned());
+
         assert!(!should_attempt_market_context_refresh(
-            &MarketContextStatus::AvailableSymbolContext
+            &packet,
+            &MarketContextRehydrationOptions::default()
+        ));
+        assert!(should_attempt_market_context_refresh(
+            &packet,
+            &MarketContextRehydrationOptions {
+                include_terminal_missing_market_context: true
+            }
+        ));
+    }
+
+    #[test]
+    fn unrelated_terminal_context_is_not_reopened() {
+        let mut packet = packet_with_market_status(MarketContextStatus::Unavailable);
+        packet.market_context_terminal_reason = Some("source_contract_terminal".to_owned());
+
+        assert!(!should_attempt_market_context_refresh(
+            &packet,
+            &MarketContextRehydrationOptions {
+                include_terminal_missing_market_context: true
+            }
         ));
     }
 
@@ -436,11 +536,13 @@ mod tests {
     fn pending_context_accepts_any_available_refresh() {
         assert!(refreshed_context_warrants_revision(
             &MarketContextStatus::Pending,
-            &MarketContextStatus::StaleButUsable
+            &MarketContextStatus::StaleButUsable,
+            false
         ));
         assert!(!refreshed_context_warrants_revision(
             &MarketContextStatus::Pending,
-            &MarketContextStatus::Unavailable
+            &MarketContextStatus::Unavailable,
+            false
         ));
     }
 
@@ -448,15 +550,32 @@ mod tests {
     fn stale_context_requires_non_stale_available_refresh() {
         assert!(refreshed_context_warrants_revision(
             &MarketContextStatus::StaleButUsable,
-            &MarketContextStatus::NearestAvailable
+            &MarketContextStatus::NearestAvailable,
+            false
         ));
         assert!(refreshed_context_warrants_revision(
             &MarketContextStatus::StaleButUsable,
-            &MarketContextStatus::AvailableSymbolContext
+            &MarketContextStatus::AvailableSymbolContext,
+            false
         ));
         assert!(!refreshed_context_warrants_revision(
             &MarketContextStatus::StaleButUsable,
-            &MarketContextStatus::StaleButUsable
+            &MarketContextStatus::StaleButUsable,
+            false
+        ));
+    }
+
+    #[test]
+    fn terminal_reopen_accepts_any_available_refresh() {
+        assert!(refreshed_context_warrants_revision(
+            &MarketContextStatus::Unavailable,
+            &MarketContextStatus::StaleButUsable,
+            true
+        ));
+        assert!(!refreshed_context_warrants_revision(
+            &MarketContextStatus::Unavailable,
+            &MarketContextStatus::Unavailable,
+            true
         ));
     }
 

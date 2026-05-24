@@ -5,7 +5,9 @@ use intel_structuring_app::models::constants::STRUCTURED_PACKET_SCHEMA_VERSION;
 use intel_structuring_app::nats::publisher::StructuredPublisher;
 use intel_structuring_app::storage::object_store::ObjectStore;
 use intel_structuring_app::time::{now_ms, time_part};
-use intel_structuring_app::workflow::rehydration::MarketContextRehydrator;
+use intel_structuring_app::workflow::rehydration::{
+    MarketContextRehydrationOptions, MarketContextRehydrator,
+};
 
 const DEFAULT_MAX_PACKETS: usize = 512;
 const HOUR_MS: i64 = 3_600_000;
@@ -14,6 +16,7 @@ const HOUR_MS: i64 = 3_600_000;
 struct CliArgs {
     max_packets: usize,
     recent_hours: Option<usize>,
+    include_terminal_missing_market_context: bool,
 }
 
 #[tokio::main]
@@ -36,11 +39,16 @@ async fn main() -> AppResult<()> {
         .recent_hours
         .map(|hours| recent_structured_packet_prefixes(now_ms(), hours))
         .unwrap_or_default();
-    let published = if input_prefixes.is_empty() {
-        rehydrator.run_once(cli.max_packets).await?
+    let rehydration_options = MarketContextRehydrationOptions {
+        include_terminal_missing_market_context: cli.include_terminal_missing_market_context,
+    };
+    let summary = if input_prefixes.is_empty() {
+        rehydrator
+            .run_once_with_options(cli.max_packets, rehydration_options)
+            .await?
     } else {
         rehydrator
-            .run_prefixes_once(&input_prefixes, cli.max_packets)
+            .run_prefixes_once_with_options(&input_prefixes, cli.max_packets, rehydration_options)
             .await?
     };
     println!(
@@ -50,7 +58,10 @@ async fn main() -> AppResult<()> {
             "max_packets_per_prefix": cli.max_packets,
             "recent_hours": cli.recent_hours,
             "input_prefixes": input_prefixes,
-            "published_revisions": published,
+            "include_terminal_missing_market_context": cli.include_terminal_missing_market_context,
+            "scanned_keys": summary.scanned_keys,
+            "published_revisions": summary.published_revisions,
+            "skipped_record_errors": summary.skipped_record_errors,
         }))?
     );
     Ok(())
@@ -59,6 +70,7 @@ async fn main() -> AppResult<()> {
 fn parse_cli_args(values: impl Iterator<Item = String>) -> AppResult<CliArgs> {
     let mut max_packets = DEFAULT_MAX_PACKETS;
     let mut recent_hours = None;
+    let mut include_terminal_missing_market_context = false;
     let mut values = values.peekable();
     while let Some(arg) = values.next() {
         match arg.as_str() {
@@ -78,9 +90,12 @@ fn parse_cli_args(values: impl Iterator<Item = String>) -> AppResult<CliArgs> {
                     AppError::config(format!("invalid --recent-hours: {error}"))
                 })?);
             }
+            "--include-terminal-missing-market-context" => {
+                include_terminal_missing_market_context = true;
+            }
             "--help" | "-h" => {
                 return Err(AppError::config(
-                    "intel-l1-rehydration-worker [--max-packets <positive integer>] [--recent-hours <positive integer>]",
+                    "intel-l1-rehydration-worker [--max-packets <positive integer>] [--recent-hours <positive integer>] [--include-terminal-missing-market-context]",
                 ));
             }
             other => {
@@ -99,6 +114,7 @@ fn parse_cli_args(values: impl Iterator<Item = String>) -> AppResult<CliArgs> {
     Ok(CliArgs {
         max_packets,
         recent_hours,
+        include_terminal_missing_market_context,
     })
 }
 
@@ -139,7 +155,30 @@ mod tests {
             args,
             CliArgs {
                 max_packets: 20,
-                recent_hours: Some(3)
+                recent_hours: Some(3),
+                include_terminal_missing_market_context: false
+            }
+        );
+    }
+
+    #[test]
+    fn parses_terminal_missing_rehydration_opt_in() {
+        let args = parse_cli_args(
+            [
+                "--max-packets".to_owned(),
+                "20".to_owned(),
+                "--include-terminal-missing-market-context".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            args,
+            CliArgs {
+                max_packets: 20,
+                recent_hours: None,
+                include_terminal_missing_market_context: true
             }
         );
     }
