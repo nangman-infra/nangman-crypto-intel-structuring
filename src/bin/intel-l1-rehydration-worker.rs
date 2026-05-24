@@ -33,22 +33,25 @@ async fn main() -> AppResult<()> {
         args.processing.market_context_stale_after_ms,
     );
     let publisher = StructuredPublisher::connect(&args.nats).await?;
-    let rehydrator =
-        MarketContextRehydrator::new(output_store, market_reader, publisher, args.processing);
+    let rehydration_options = MarketContextRehydrationOptions {
+        include_terminal_missing_market_context: cli.include_terminal_missing_market_context,
+    };
+    let rehydrator = MarketContextRehydrator::new(
+        output_store,
+        market_reader,
+        publisher,
+        args.processing,
+        rehydration_options,
+    );
     let input_prefixes = cli
         .recent_hours
         .map(|hours| recent_structured_packet_prefixes(now_ms(), hours))
         .unwrap_or_default();
-    let rehydration_options = MarketContextRehydrationOptions {
-        include_terminal_missing_market_context: cli.include_terminal_missing_market_context,
-    };
-    let summary = if input_prefixes.is_empty() {
-        rehydrator
-            .run_once_with_options(cli.max_packets, rehydration_options)
-            .await?
+    let published = if input_prefixes.is_empty() {
+        rehydrator.run_once(cli.max_packets).await?
     } else {
         rehydrator
-            .run_prefixes_once_with_options(&input_prefixes, cli.max_packets, rehydration_options)
+            .run_prefixes_once(&input_prefixes, cli.max_packets)
             .await?
     };
     println!(
@@ -59,9 +62,7 @@ async fn main() -> AppResult<()> {
             "recent_hours": cli.recent_hours,
             "input_prefixes": input_prefixes,
             "include_terminal_missing_market_context": cli.include_terminal_missing_market_context,
-            "scanned_keys": summary.scanned_keys,
-            "published_revisions": summary.published_revisions,
-            "skipped_record_errors": summary.skipped_record_errors,
+            "published_revisions": published,
         }))?
     );
     Ok(())

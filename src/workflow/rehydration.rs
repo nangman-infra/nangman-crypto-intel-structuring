@@ -25,18 +25,12 @@ pub struct MarketContextRehydrationOptions {
     pub include_terminal_missing_market_context: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct MarketContextRehydrationSummary {
-    pub scanned_keys: usize,
-    pub published_revisions: usize,
-    pub skipped_record_errors: usize,
-}
-
 pub struct MarketContextRehydrator {
     output_store: ObjectStore,
     market_reader: MarketL1Reader,
     publisher: StructuredPublisher,
     config: ProcessingConfig,
+    rehydration_options: MarketContextRehydrationOptions,
 }
 
 impl MarketContextRehydrator {
@@ -45,33 +39,20 @@ impl MarketContextRehydrator {
         market_reader: MarketL1Reader,
         publisher: StructuredPublisher,
         config: ProcessingConfig,
+        rehydration_options: MarketContextRehydrationOptions,
     ) -> Self {
         Self {
             output_store,
             market_reader,
             publisher,
             config,
+            rehydration_options,
         }
     }
 
     pub async fn run_once(&self, max_packets: usize) -> AppResult<usize> {
-        Ok(self
-            .run_once_with_options(max_packets, MarketContextRehydrationOptions::default())
-            .await?
-            .published_revisions)
-    }
-
-    pub async fn run_once_with_options(
-        &self,
-        max_packets: usize,
-        options: MarketContextRehydrationOptions,
-    ) -> AppResult<MarketContextRehydrationSummary> {
-        self.run_prefixes_once_with_options(
-            &[STRUCTURED_PACKET_PREFIX.to_owned()],
-            max_packets,
-            options,
-        )
-        .await
+        self.run_prefixes_once(&[STRUCTURED_PACKET_PREFIX.to_owned()], max_packets)
+            .await
     }
 
     pub async fn run_prefixes_once(
@@ -79,41 +60,21 @@ impl MarketContextRehydrator {
         prefixes: &[String],
         max_packets_per_prefix: usize,
     ) -> AppResult<usize> {
-        Ok(self
-            .run_prefixes_once_with_options(
-                prefixes,
-                max_packets_per_prefix,
-                MarketContextRehydrationOptions::default(),
-            )
-            .await?
-            .published_revisions)
-    }
-
-    pub async fn run_prefixes_once_with_options(
-        &self,
-        prefixes: &[String],
-        max_packets_per_prefix: usize,
-        options: MarketContextRehydrationOptions,
-    ) -> AppResult<MarketContextRehydrationSummary> {
         let keys = self
             .list_rehydration_keys(prefixes, max_packets_per_prefix)
             .await?;
-        let mut summary = MarketContextRehydrationSummary {
-            scanned_keys: keys.len(),
-            ..MarketContextRehydrationSummary::default()
-        };
+        let mut published = 0usize;
         for key in keys {
-            match self.try_rehydrate_key(&key, options).await {
-                Ok(true) => summary.published_revisions += 1,
+            match self.try_rehydrate_key(&key).await {
+                Ok(true) => published += 1,
                 Ok(false) => {}
                 Err(error) if is_record_level_rehydration_error(&error) => {
-                    summary.skipped_record_errors += 1;
                     eprintln!("market context rehydration skipped key={key}: {error}");
                 }
                 Err(error) => return Err(error),
             }
         }
-        Ok(summary)
+        Ok(published)
     }
 
     async fn list_rehydration_keys(
@@ -134,16 +95,12 @@ impl MarketContextRehydrator {
         Ok(keys.into_iter().collect())
     }
 
-    async fn try_rehydrate_key(
-        &self,
-        key: &str,
-        options: MarketContextRehydrationOptions,
-    ) -> AppResult<bool> {
+    async fn try_rehydrate_key(&self, key: &str) -> AppResult<bool> {
         let bytes = self.output_store.get_bytes(key).await?;
         let packet: StructuredIntelPacket = serde_json::from_slice(&bytes)?;
         let terminal_reopen =
-            is_terminal_missing_market_context_reopen_candidate(&packet, &options);
-        if !should_attempt_market_context_refresh(&packet, &options) {
+            is_terminal_missing_market_context_reopen_candidate(&packet, &self.rehydration_options);
+        if !should_attempt_market_context_refresh(&packet, &self.rehydration_options) {
             return Ok(false);
         }
         if packet.market_context_terminal_reason.is_some() && !terminal_reopen {
