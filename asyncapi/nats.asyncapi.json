@@ -3,7 +3,7 @@
   "info": {
     "title": "Nangman Crypto Intel L1 NATS Contract",
     "version": "1.0.0",
-    "description": "NATS is a pointer/event bus. S3/RustFS object storage is the durable source of truth."
+    "description": "NATS is a pointer/event bus. AWS S3 object storage is the durable source of truth."
   },
   "servers": {
     "nats": {
@@ -139,7 +139,7 @@
     }
   },
   "x-nangman-contract": {
-    "canonical_store": "s3_or_rustfs",
+    "canonical_store": "aws_s3",
     "event_bus": "nats_jetstream",
     "raw_ack_rule": "ack raw input only after S3 writes, NATS publish ack, success index write, and flush complete",
     "forbidden_semantics": [

@@ -23,7 +23,7 @@ pub struct IntelStructuringProcessor<P>
 where
     P: crate::ai::contract::ModelProvider,
 {
-    rustfs_store: ObjectStore,
+    raw_l0_store: ObjectStore,
     output_store: ObjectStore,
     market_reader: MarketL1Reader,
     router: ModelRouter<P>,
@@ -48,7 +48,7 @@ where
     P: crate::ai::contract::ModelProvider,
 {
     pub fn new(
-        rustfs_store: ObjectStore,
+        raw_l0_store: ObjectStore,
         output_store: ObjectStore,
         market_reader: MarketL1Reader,
         router: ModelRouter<P>,
@@ -56,7 +56,7 @@ where
         config: ProcessingConfig,
     ) -> Self {
         Self {
-            rustfs_store,
+            raw_l0_store,
             output_store,
             market_reader,
             router,
@@ -110,15 +110,15 @@ where
     }
 
     async fn process_pointer(&self, pointer: RawIntelEventCreatedPointer) -> AppResult<()> {
-        if pointer.storage_ref.bucket != self.rustfs_store.bucket() {
+        if pointer.storage_ref.bucket != self.raw_l0_store.bucket() {
             return Err(AppError::validation(format!(
                 "raw pointer bucket mismatch pointer={} configured={}",
                 pointer.storage_ref.bucket,
-                self.rustfs_store.bucket()
+                self.raw_l0_store.bucket()
             )));
         }
         let raw_bytes = self
-            .rustfs_store
+            .raw_l0_store
             .get_byte_range(
                 &pointer.storage_ref.key,
                 pointer.storage_ref.byte_offset,

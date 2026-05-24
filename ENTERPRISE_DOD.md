@@ -3,7 +3,7 @@
 The app is not complete until all items pass:
 
 - RAW_INTEL durable consumer reads pointer messages.
-- RustFS raw record is recovered by pointer range and `content_sha256` is verified.
+- Raw Intel L0 S3 record is recovered by pointer range and `content_sha256` is verified.
 - Market-L1 is read only through pointer admission.
 - Market-L1 missing state becomes `pending` or `unavailable`, not a crash.
 - L0 `content_quality`, `source_quality`, and `source_relevance_scope` are preserved into model prompts and source summaries.
@@ -25,7 +25,7 @@ The app is not complete until all items pass:
 - SIGTERM does not acknowledge an incomplete message.
 - Duplicate redelivery only skips when the success index exists; prepared-only runs are retried.
 - Duplicate redelivery reuses deterministic keys and does not create duplicate S3 output.
-- JSON Schema Draft 2020-12 contracts exist for the stable INTEL-L1 S3/RustFS payloads.
+- JSON Schema Draft 2020-12 contracts exist for the stable INTEL-L1 S3 payloads.
 - AsyncAPI 3.0 contract exists for RAW_INTEL consume and STRUCTURED_INTEL publish subjects.
 - Contract tests fail CI on schema version drift, missing NATS subjects, or forbidden trading-decision semantics.
 - Forbidden trade output terms are blocked.

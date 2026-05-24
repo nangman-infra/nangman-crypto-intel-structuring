@@ -4,13 +4,13 @@
 
 Repository: `git@github.com:nangman-infra/nangman-crypto-intel-structuring.git`
 
-It consumes `RAW_INTEL` pointer messages from NATS JetStream, recovers raw evidence from RustFS, reads Market-L1 only through the `l1_index -> manifest -> report -> output_object_keys` contract path, structures the event, writes INTEL-L1 objects to S3, publishes structured pointers to NATS, and only then acknowledges the original RAW_INTEL message.
+It consumes `RAW_INTEL` pointer messages from NATS JetStream, recovers raw evidence from AWS S3 Raw Intel L0, reads Market-L1 only through the `l1_index -> manifest -> report -> output_object_keys` contract path, structures the event, writes INTEL-L1 objects to S3, publishes structured pointers to NATS, and only then acknowledges the original RAW_INTEL message.
 
 ## Runtime contract
 
 ```text
 RAW_INTEL durable pull consumer
-  -> RustFS raw recovery and sha verification
+  -> Raw Intel L0 S3 recovery and sha verification
   -> Market-L1 admission
   -> L0 source/content quality admission
   -> rule/NLP/NLI
@@ -86,9 +86,11 @@ schemas/*.schema.json
 asyncapi/nats.asyncapi.json
 ```
 
-JSON Schema Draft 2020-12 files define S3/RustFS payload contracts for raw pointers, structured packets, context flags, story clusters, health events, manifests, index pointers, packet revision indexes, and structured object pointers.
+JSON Schema Draft 2020-12 files define AWS S3 payload contracts for raw pointers, structured packets, context flags, story clusters, health events, manifests, index pointers, packet revision indexes, and structured object pointers.
 
-The AsyncAPI 3.0 contract defines the NATS subjects this app consumes and publishes. NATS is only a pointer/event bus; S3/RustFS remains the canonical durable store. Contract tests run with `cargo test --all-targets`, so schema version drift, missing subjects, or accidental trading-decision semantics fail CI.
+The AsyncAPI 3.0 contract defines the NATS subjects this app consumes and publishes. NATS is only a pointer/event bus; AWS S3 remains the canonical durable store. Contract tests run with `cargo test --all-targets`, so schema version drift, missing subjects, or accidental trading-decision semantics fail CI.
+
+The raw pointer schema still accepts the legacy `storage_ref.kind = rustfs_jsonl_record` value for compatibility with existing RAW_INTEL messages. That field name is a schema compatibility marker, not a RustFS runtime dependency. Raw L0 reads use the AWS SDK S3/IAM path; there is no RustFS endpoint or custom access-key path in the promoted runtime configuration.
 
 ## Runtime prerequisites
 
@@ -97,10 +99,10 @@ NATS:
 - RAW_INTEL stream exists
 - app can create or access STRUCTURED_INTEL
 
-RustFS:
-- INTEL_L1_L0_RUSTFS_ACCESS_KEY_ID
-- INTEL_L1_L0_RUSTFS_SECRET_ACCESS_KEY
-- read access to intel-crawl-app-l0
+Raw Intel L0 AWS S3:
+- INTEL_L1_RAW_S3_BUCKET
+- INTEL_L1_RAW_S3_REGION
+- read access to the Raw Intel L0 bucket
 
 AWS:
 - read access to Market-L1 bucket

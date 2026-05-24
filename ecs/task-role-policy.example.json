@@ -2,6 +2,15 @@
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "ReadRawIntelL0",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::nangman-crypto-dev-intel-crawl-l0-<account-suffix>",
+        "arn:aws:s3:::nangman-crypto-dev-intel-crawl-l0-<account-suffix>/*"
+      ]
+    },
+    {
       "Sid": "ReadMarketL1",
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:ListBucket"],
@@ -29,15 +38,6 @@
           "aws:RequestedRegion": "us-east-1"
         }
       }
-    },
-    {
-      "Sid": "ReadRustfsSecrets",
-      "Effect": "Allow",
-      "Action": ["secretsmanager:GetSecretValue"],
-      "Resource": [
-        "arn:aws:secretsmanager:ap-northeast-2:<aws-account-id>:secret:REPLACE_WITH_RUSTFS_ACCESS_KEY*",
-        "arn:aws:secretsmanager:ap-northeast-2:<aws-account-id>:secret:REPLACE_WITH_RUSTFS_SECRET_KEY*"
-      ]
     }
   ]
 }

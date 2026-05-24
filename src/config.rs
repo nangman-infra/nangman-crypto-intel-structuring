@@ -15,9 +15,8 @@ pub const DEFAULT_STRUCTURED_STREAM: &str = "STRUCTURED_INTEL";
 pub const DEFAULT_STRUCTURED_PACKET_SUBJECT: &str = "structured_intel_packet.created";
 pub const DEFAULT_CONTEXT_FLAG_SUBJECT: &str = "context_flag_packet.created";
 pub const DEFAULT_HEALTH_SUBJECT: &str = "structuring_health_event.created";
-pub const DEFAULT_RUSTFS_ENDPOINT: &str = "https://s3.nangman.cloud";
-pub const DEFAULT_RUSTFS_BUCKET: &str = "intel-crawl-app-l0";
-pub const DEFAULT_RUSTFS_REGION: &str = "us-east-1";
+pub const DEFAULT_RAW_S3_BUCKET: &str = "nangman-crypto-dev-intel-crawl-l0-<account-suffix>";
+pub const DEFAULT_RAW_S3_REGION: &str = "ap-northeast-2";
 pub const DEFAULT_OUTPUT_BUCKET: &str = "nangman-crypto-dev-intel-structuring-l1-<account-suffix>";
 pub const DEFAULT_AWS_REGION: &str = "ap-northeast-2";
 pub const DEFAULT_BEDROCK_REGION: &str = "us-east-1";
@@ -31,7 +30,7 @@ pub const DEFAULT_MARKET_CONTEXT_EXPIRE_AFTER_MS: i64 = 6 * 60 * 60 * 1_000;
 #[derive(Debug, Clone)]
 pub struct Args {
     pub nats: NatsConfig,
-    pub rustfs_store: ObjectStoreConfig,
+    pub raw_l0_store: ObjectStoreConfig,
     pub output_store: ObjectStoreConfig,
     pub market_l1_store: ObjectStoreConfig,
     pub market_l1_window_ms: i64,
@@ -103,16 +102,8 @@ impl Args {
                     args.nats.ensure_output_stream =
                         parse_bool(&required_value(&mut values, "--ensure-output-stream")?)?;
                 }
-                "--rustfs-endpoint" => {
-                    args.rustfs_store.endpoint =
-                        Some(required_value(&mut values, "--rustfs-endpoint")?)
-                }
-                "--rustfs-bucket" => {
-                    args.rustfs_store.bucket = required_value(&mut values, "--rustfs-bucket")?
-                }
-                "--rustfs-region" => {
-                    args.rustfs_store.region = required_value(&mut values, "--rustfs-region")?
-                }
+                "--raw-s3-bucket" => args.raw_l0_store.bucket = required_value(&mut values, &arg)?,
+                "--raw-s3-region" => args.raw_l0_store.region = required_value(&mut values, &arg)?,
                 "--output-bucket" => {
                     args.output_store.bucket = required_value(&mut values, "--output-bucket")?
                 }
@@ -221,17 +212,14 @@ impl Args {
                 max_deliver: env_i64("INTEL_L1_RAW_MAX_DELIVER", 20),
                 batch_size: env_usize("INTEL_L1_RAW_BATCH_SIZE", 1),
             },
-            rustfs_store: ObjectStoreConfig {
-                endpoint: Some(env_or(
-                    "INTEL_L1_L0_RUSTFS_ENDPOINT",
-                    DEFAULT_RUSTFS_ENDPOINT,
-                )),
-                bucket: env_or("INTEL_L1_L0_RUSTFS_BUCKET", DEFAULT_RUSTFS_BUCKET),
-                region: env_or("INTEL_L1_L0_RUSTFS_REGION", DEFAULT_RUSTFS_REGION),
-                force_path_style: env_bool("INTEL_L1_L0_RUSTFS_FORCE_PATH_STYLE", true),
-                profile: env_opt("INTEL_L1_L0_RUSTFS_AWS_PROFILE"),
-                access_key_id: env_opt("INTEL_L1_L0_RUSTFS_ACCESS_KEY_ID"),
-                secret_access_key: env_opt("INTEL_L1_L0_RUSTFS_SECRET_ACCESS_KEY"),
+            raw_l0_store: ObjectStoreConfig {
+                endpoint: None,
+                bucket: env_or("INTEL_L1_RAW_S3_BUCKET", DEFAULT_RAW_S3_BUCKET),
+                region: env_or("INTEL_L1_RAW_S3_REGION", DEFAULT_RAW_S3_REGION),
+                force_path_style: false,
+                profile: env_opt("AWS_PROFILE"),
+                access_key_id: None,
+                secret_access_key: None,
             },
             output_store: ObjectStoreConfig {
                 endpoint: env_opt("INTEL_L1_OUTPUT_S3_ENDPOINT"),
@@ -307,7 +295,7 @@ impl Args {
         validate_non_empty(&self.nats.url, "NATS_URL")?;
         validate_real_config_value(&self.output_store.bucket, "INTEL_L1_OUTPUT_S3_BUCKET")?;
         validate_real_config_value(&self.market_l1_store.bucket, "INTEL_L1_MARKET_L1_BUCKET")?;
-        validate_real_config_value(&self.rustfs_store.bucket, "INTEL_L1_L0_RUSTFS_BUCKET")?;
+        validate_real_config_value(&self.raw_l0_store.bucket, "INTEL_L1_RAW_S3_BUCKET")?;
         if self.market_l1_window_ms <= 0 {
             return Err(AppError::config(
                 "INTEL_L1_MARKET_WINDOW_MS must be positive",
@@ -504,7 +492,7 @@ fn env_f64(name: &str, default: f64) -> f64 {
 }
 
 fn help() -> String {
-    "Usage: intel-structuring-app [--max-messages N] [--exit-on-idle true|false] [--enable-bedrock true|false] [--bedrock-region REGION]".to_owned()
+    "Usage: intel-structuring-app [--raw-s3-bucket BUCKET] [--output-bucket BUCKET] [--market-l1-bucket BUCKET] [--max-messages N] [--exit-on-idle true|false] [--enable-bedrock true|false] [--bedrock-region REGION]".to_owned()
 }
 
 #[cfg(test)]
@@ -522,6 +510,8 @@ mod tests {
                 "true",
                 "--enable-bedrock",
                 "false",
+                "--raw-s3-bucket",
+                "test-raw-intel-l0",
                 "--output-bucket",
                 "test-intel-structuring-l1",
                 "--market-l1-bucket",
@@ -554,6 +544,8 @@ mod tests {
                 "ap-northeast-2",
                 "--bedrock-region",
                 "us-east-1",
+                "--raw-s3-bucket",
+                "test-raw-intel-l0",
                 "--output-bucket",
                 "test-intel-structuring-l1",
                 "--market-l1-bucket",
@@ -576,6 +568,8 @@ mod tests {
                 "intel-structuring-app",
                 "--output-bucket",
                 DEFAULT_OUTPUT_BUCKET,
+                "--raw-s3-bucket",
+                "test-raw-intel-l0",
                 "--market-l1-bucket",
                 "test-market-l1",
             ]
@@ -586,5 +580,23 @@ mod tests {
 
         assert!(err.to_string().contains("INTEL_L1_OUTPUT_S3_BUCKET"));
         assert!(err.to_string().contains("public-doc placeholder"));
+    }
+
+    #[test]
+    fn rejects_default_raw_bucket_placeholder() {
+        let err = Args::parse(
+            [
+                "intel-structuring-app",
+                "--output-bucket",
+                "test-intel-structuring-l1",
+                "--market-l1-bucket",
+                "test-market-l1",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("INTEL_L1_RAW_S3_BUCKET"));
     }
 }

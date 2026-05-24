@@ -11,7 +11,7 @@ use intel_structuring_app::workflow::processor::IntelStructuringProcessor;
 #[tokio::main]
 async fn main() -> AppResult<()> {
     let args = Args::parse(std::env::args())?;
-    let rustfs_store = ObjectStore::connect(args.rustfs_store.clone()).await?;
+    let raw_l0_store = ObjectStore::connect(args.raw_l0_store.clone()).await?;
     let output_store = ObjectStore::connect(args.output_store.clone()).await?;
     let market_store = ObjectStore::connect(args.market_l1_store.clone()).await?;
     let market_reader = MarketL1Reader::new(
@@ -27,7 +27,7 @@ async fn main() -> AppResult<()> {
     let mut consumer = RawIntelConsumer::connect(&args.nats).await?;
 
     let processor = IntelStructuringProcessor::new(
-        rustfs_store,
+        raw_l0_store,
         output_store,
         market_reader,
         router,
