@@ -4,6 +4,7 @@ use aws_credential_types::Credentials;
 use aws_sdk_s3::Client;
 use aws_sdk_s3::config::Builder as S3ConfigBuilder;
 use aws_sdk_s3::primitives::ByteStream;
+use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use aws_types::region::Region;
 use serde::Serialize;
 use std::env;
@@ -300,8 +301,9 @@ impl ObjectStore {
             request = request.if_none_match("*");
         }
         request.send().await.map_err(|error| {
+            let code = error.code().map(str::to_owned);
             let message = error.to_string();
-            if if_absent && is_precondition_failure(&message) {
+            if if_absent && is_precondition_failure(code.as_deref(), &message) {
                 AppError::validation(format!(
                     "object already exists bucket={} key={key}",
                     self.bucket
@@ -374,8 +376,9 @@ fn env_bool(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn is_precondition_failure(message: &str) -> bool {
-    message.contains("PreconditionFailed")
+fn is_precondition_failure(code: Option<&str>, message: &str) -> bool {
+    matches!(code, Some("PreconditionFailed"))
+        || message.contains("PreconditionFailed")
         || message.contains("precondition")
         || message.contains("412")
 }
@@ -427,5 +430,18 @@ mod tests {
         };
         let err = validate_config(&config).unwrap_err();
         assert!(err.to_string().contains("public-doc placeholder"));
+    }
+
+    #[test]
+    fn detects_precondition_failure_from_metadata_code() {
+        assert!(is_precondition_failure(
+            Some("PreconditionFailed"),
+            "service error"
+        ));
+    }
+
+    #[test]
+    fn detects_precondition_failure_from_message_fallback() {
+        assert!(is_precondition_failure(None, "S3 returned 412"));
     }
 }
