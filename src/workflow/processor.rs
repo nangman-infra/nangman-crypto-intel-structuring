@@ -163,7 +163,7 @@ where
             validate_no_forbidden_output(context_flag_packet)?;
         }
 
-        let run_id = run_id("intel-l1", observed_at_ms);
+        let run_id = policy_scoped_run_id(&self.config.structuring_policy_version, observed_at_ms);
         let structured_key = keys::structured_packet_key(
             observed_at_ms,
             &raw_event.event_id,
@@ -471,6 +471,11 @@ fn build_index(status: &str, input: &IndexBuildInput<'_>) -> IntelL1IndexPointer
     }
 }
 
+fn policy_scoped_run_id(policy_version: &str, observed_at_ms: i64) -> String {
+    let policy_id = stable_short_id("policy", &[policy_version]);
+    run_id(&format!("intel-l1-{policy_id}"), observed_at_ms)
+}
+
 fn is_permanent_failure(error: &AppError) -> bool {
     matches!(error, AppError::Validation(_))
 }
@@ -478,4 +483,20 @@ fn is_permanent_failure(error: &AppError) -> bool {
 fn is_numeric_market_snapshot(event: &RawIntelEvent) -> bool {
     event.source_quality_or_unknown() == "market_snapshot"
         || event.content_quality_or_unknown() == "numeric_observation"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn policy_scoped_run_id_changes_with_policy_version() {
+        let timestamp_ms = 1_779_658_292_837;
+        let first = policy_scoped_run_id("policy_v1", timestamp_ms);
+        let second = policy_scoped_run_id("policy_v2", timestamp_ms);
+
+        assert_ne!(first, second);
+        assert!(first.starts_with("intel-l1-policy_"));
+        assert!(first.ends_with("-20260524T213132837Z"));
+    }
 }
