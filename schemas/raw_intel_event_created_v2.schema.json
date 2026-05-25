@@ -50,7 +50,7 @@
         "content_sha256"
       ],
       "properties": {
-        "kind": { "const": "rustfs_jsonl_record" },
+        "kind": { "const": "aws_s3_jsonl_record" },
         "endpoint_alias": { "type": "string", "minLength": 1 },
         "bucket": { "type": "string", "minLength": 1 },
         "key": { "type": "string", "minLength": 1 },

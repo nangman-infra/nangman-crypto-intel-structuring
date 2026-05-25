@@ -3,6 +3,8 @@ use crate::hash::sha256_prefixed;
 use crate::models::constants::{RAW_EVENT_SCHEMA_VERSION, RAW_POINTER_SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 
+const RAW_STORAGE_KIND_AWS_S3_JSONL_RECORD: &str = "aws_s3_jsonl_record";
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RawIntelEventCreatedPointer {
     pub schema_version: String,
@@ -56,7 +58,7 @@ pub struct RawIntelEventStorageRef {
 
 impl RawIntelEventStorageRef {
     pub fn validate(&self) -> AppResult<()> {
-        if self.kind != "rustfs_jsonl_record" {
+        if self.kind != RAW_STORAGE_KIND_AWS_S3_JSONL_RECORD {
             return Err(AppError::validation(format!(
                 "unsupported raw storage kind: {}",
                 self.kind
@@ -212,7 +214,7 @@ mod tests {
             "dedup_key":"d",
             "symbol_candidates":[],
             "top50_relevance":"unknown",
-            "storage_ref":{"kind":"rustfs_jsonl_record","endpoint_alias":"aws-s3-primary","bucket":"b","key":"k","line_number":1,"byte_offset":0,"byte_length":1,"content_sha256":"sha256:abc"}
+            "storage_ref":{"kind":"aws_s3_jsonl_record","endpoint_alias":"aws-s3-primary","bucket":"b","key":"k","line_number":1,"byte_offset":0,"byte_length":1,"content_sha256":"sha256:abc"}
         }"#;
         assert!(RawIntelEventCreatedPointer::parse(payload).is_err());
     }
@@ -233,7 +235,7 @@ mod tests {
             symbol_candidates: Vec::new(),
             top50_relevance: "unknown".to_owned(),
             storage_ref: RawIntelEventStorageRef {
-                kind: "rustfs_jsonl_record".to_owned(),
+                kind: RAW_STORAGE_KIND_AWS_S3_JSONL_RECORD.to_owned(),
                 endpoint_alias: "aws-s3-primary".to_owned(),
                 bucket: "b".to_owned(),
                 key: "k".to_owned(),

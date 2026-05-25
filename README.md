@@ -96,9 +96,8 @@ JSON Schema Draft 2020-12 files define AWS S3 payload contracts for raw pointers
 
 The AsyncAPI 3.0 contract defines the NATS subjects this app consumes and publishes. NATS is only a pointer/event bus; AWS S3 remains the canonical durable store. Contract tests run with `cargo test --all-targets`, so schema version drift, missing subjects, or accidental trading-decision semantics fail CI.
 
-The raw pointer schema still accepts the legacy
-`storage_ref.kind = rustfs_jsonl_record` value for compatibility with existing
-RAW_INTEL messages. Runtime Raw L0 reads use the AWS SDK S3/IAM path.
+The raw pointer schema accepts `storage_ref.kind = aws_s3_jsonl_record`.
+Runtime Raw L0 reads use the AWS SDK S3/IAM path.
 
 ## Runtime prerequisites
 
