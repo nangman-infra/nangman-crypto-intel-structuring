@@ -258,7 +258,9 @@ pub enum ContradictionFlag {
 #[serde(rename_all = "snake_case")]
 pub enum ModelTierUsed {
     RuleOnly,
+    #[serde(alias = "haiku")]
     Primary,
+    #[serde(alias = "sonnet")]
     Escalation,
     FallbackOnly,
 }
@@ -464,5 +466,25 @@ mod tests {
     #[test]
     fn structured_pointer_has_own_schema_version() {
         assert_eq!(StructuredPointer::schema(), "structured_pointer_v1");
+    }
+
+    #[test]
+    fn model_tier_accepts_legacy_bedrock_names_but_serializes_current_contract() {
+        assert_eq!(
+            serde_json::from_str::<ModelTierUsed>("\"haiku\"").unwrap(),
+            ModelTierUsed::Primary
+        );
+        assert_eq!(
+            serde_json::from_str::<ModelTierUsed>("\"sonnet\"").unwrap(),
+            ModelTierUsed::Escalation
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelTierUsed::Primary).unwrap(),
+            "\"primary\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelTierUsed::Escalation).unwrap(),
+            "\"escalation\""
+        );
     }
 }
