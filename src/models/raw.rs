@@ -212,7 +212,7 @@ mod tests {
             "dedup_key":"d",
             "symbol_candidates":[],
             "top50_relevance":"unknown",
-            "storage_ref":{"kind":"rustfs_jsonl_record","endpoint_alias":"rustfs-primary","bucket":"b","key":"k","line_number":1,"byte_offset":0,"byte_length":1,"content_sha256":"sha256:abc"}
+            "storage_ref":{"kind":"rustfs_jsonl_record","endpoint_alias":"aws-s3-primary","bucket":"b","key":"k","line_number":1,"byte_offset":0,"byte_length":1,"content_sha256":"sha256:abc"}
         }"#;
         assert!(RawIntelEventCreatedPointer::parse(payload).is_err());
     }
@@ -234,7 +234,7 @@ mod tests {
             top50_relevance: "unknown".to_owned(),
             storage_ref: RawIntelEventStorageRef {
                 kind: "rustfs_jsonl_record".to_owned(),
-                endpoint_alias: "rustfs-primary".to_owned(),
+                endpoint_alias: "aws-s3-primary".to_owned(),
                 bucket: "b".to_owned(),
                 key: "k".to_owned(),
                 line_number: 1,

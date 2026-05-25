@@ -55,16 +55,22 @@ Single numeric derivatives snapshots are never allowed to use escalation. `stale
 
 Llama 4 Scout and Maverick are intentionally used as low-cost generation models. Bedrock Structured Outputs are not assumed for these models, so the app treats the local Rust contract as the source of truth: prompt schema, JSON extraction, serde validation, evidence-ID hydration, deterministic repair, admission gates, and fallback/quarantine logic all run outside the model.
 
-## Local run
+## Local quality and ECS runtime
 
 ```bash
 git clone git@github.com:nangman-infra/nangman-crypto-intel-structuring.git
 cd nangman-crypto-intel-structuring
-cp .env.example .env
-sudo docker compose -f compose.yml --env-file .env up --build
+cargo fmt --all --check
+cargo test --all-targets
+cargo clippy --all-targets -- -D warnings
+docker buildx build --platform linux/arm64 -t intel-structuring-app:local --load .
 ```
 
-Set `INTEL_L1_ENABLE_BEDROCK=true` only after the ECS task role or local AWS credentials can invoke the configured Bedrock inference profiles.
+Runtime deployment is ECS/Fargate Spot. Operational values come from the ECS
+task definition, task role, and private runtime context. Local development
+harnesses are not the deployment source of truth. Set
+`INTEL_L1_ENABLE_BEDROCK=true` only after the ECS task role or local AWS
+credentials can invoke the configured Bedrock inference profiles.
 
 ## Quality gate
 
@@ -90,7 +96,9 @@ JSON Schema Draft 2020-12 files define AWS S3 payload contracts for raw pointers
 
 The AsyncAPI 3.0 contract defines the NATS subjects this app consumes and publishes. NATS is only a pointer/event bus; AWS S3 remains the canonical durable store. Contract tests run with `cargo test --all-targets`, so schema version drift, missing subjects, or accidental trading-decision semantics fail CI.
 
-The raw pointer schema still accepts the legacy `storage_ref.kind = rustfs_jsonl_record` value for compatibility with existing RAW_INTEL messages. That field name is a schema compatibility marker, not a runtime dependency. Raw L0 reads use the AWS SDK S3/IAM path, and custom S3-compatible endpoint configuration is not part of the app contract.
+The raw pointer schema still accepts the legacy
+`storage_ref.kind = rustfs_jsonl_record` value for compatibility with existing
+RAW_INTEL messages. Runtime Raw L0 reads use the AWS SDK S3/IAM path.
 
 ## Runtime prerequisites
 
