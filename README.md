@@ -72,6 +72,22 @@ harnesses are not the deployment source of truth. Set
 `INTEL_L1_ENABLE_BEDROCK=true` only after the ECS task role or local AWS
 credentials can invoke the configured Bedrock inference profiles.
 
+Mattermost runtime alert wrapper:
+
+```bash
+cd /Volumes/WD/Developments/nangman-crypto/apps/intel-structuring-app
+NANGMAN_ALERT_WEBHOOK_URL="<mattermost-webhook-url>" \
+./scripts/send-runtime-alert.sh
+```
+
+`send-runtime-alert.sh` runs `check-runtime.sh` and sends a P1 alert only when
+NATS, Market-L1 S3, INTEL-L1 S3, or Bedrock profile checks fail. The message is
+written for a human operator with conclusion, current state, likely cause, next
+actions, and safety state. Success summaries are disabled by default; set
+`INTEL_STRUCTURING_ALERT_INCLUDE_SUCCESS=true` only when a temporary heartbeat
+summary is needed. The wrapper does not update ECS, write S3 data, or change
+paper/live/order execution.
+
 ## Quality gate
 
 ```bash
