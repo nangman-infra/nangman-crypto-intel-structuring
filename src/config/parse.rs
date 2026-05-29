@@ -1,5 +1,5 @@
+use super::Args;
 use super::env::parse_bool;
-use super::*;
 use crate::error::{AppError, AppResult};
 
 impl Args {
