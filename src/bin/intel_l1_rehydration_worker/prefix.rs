@@ -1,4 +1,5 @@
 use intel_structuring_app::error::{AppError, AppResult};
+use intel_structuring_app::storage::object_store::validate_object_prefix;
 
 pub(super) fn normalize_structured_prefix(value: &str) -> AppResult<String> {
     let trimmed = value.trim();
@@ -15,5 +16,7 @@ pub(super) fn normalize_structured_prefix(value: &str) -> AppResult<String> {
             "--structured-prefix must start with structured-intel-packet/",
         ));
     }
-    Ok(trimmed.trim_end_matches('/').to_owned() + "/")
+    let normalized = trimmed.trim_end_matches('/').to_owned() + "/";
+    validate_object_prefix(&normalized, "--structured-prefix")?;
+    Ok(normalized)
 }

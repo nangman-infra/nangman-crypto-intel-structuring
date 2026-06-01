@@ -13,7 +13,13 @@ pub fn build_market_l1_read_plan(
     requested_end_ms: i64,
 ) -> AppResult<MarketL1ReadPlan> {
     validate_pointer(pointer, requested_start_ms, requested_end_ms)?;
-    validate_manifest(pointer, manifest, requested_start_ms, requested_end_ms)?;
+    validate_manifest(
+        pointer,
+        manifest,
+        manifest_key,
+        requested_start_ms,
+        requested_end_ms,
+    )?;
     validate_report(report, manifest, manifest_key)?;
     Ok(MarketL1ReadPlan {
         l1_run_id: manifest.l1_run_id.clone(),

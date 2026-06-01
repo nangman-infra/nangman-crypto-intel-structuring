@@ -1,8 +1,15 @@
 use super::ObjectStore;
-use crate::error::{AppError, AppResult};
-use aws_sdk_s3::primitives::ByteStream;
-use aws_smithy_types::error::metadata::ProvideErrorMetadata;
+use crate::error::AppResult;
 use serde::Serialize;
+
+mod payload;
+mod precondition;
+mod request;
+
+use payload::{JSON_CONTENT_TYPE, JSONL_CONTENT_TYPE, json_bytes, jsonl_bytes};
+#[cfg(test)]
+pub(super) use precondition::is_precondition_failure;
+use request::PutOutcome;
 
 impl ObjectStore {
     pub async fn put_json_if_absent<T: Serialize>(
@@ -10,8 +17,8 @@ impl ObjectStore {
         key: &str,
         value: &T,
     ) -> AppResult<Vec<u8>> {
-        let bytes = serde_json::to_vec_pretty(value)?;
-        self.put_bytes_guarded(key, bytes.clone(), "application/json", true)
+        let bytes = json_bytes(value)?;
+        self.put_bytes_if_absent(key, bytes.clone(), JSON_CONTENT_TYPE)
             .await?;
         Ok(bytes)
     }
@@ -21,8 +28,8 @@ impl ObjectStore {
         key: &str,
         value: &T,
     ) -> AppResult<Vec<u8>> {
-        let bytes = serde_json::to_vec_pretty(value)?;
-        self.put_bytes_idempotent(key, bytes.clone(), "application/json")
+        let bytes = json_bytes(value)?;
+        self.put_bytes_idempotent(key, bytes.clone(), JSON_CONTENT_TYPE)
             .await?;
         Ok(bytes)
     }
@@ -32,8 +39,8 @@ impl ObjectStore {
         key: &str,
         records: &[T],
     ) -> AppResult<Vec<u8>> {
-        let (bytes, _) = crate::jsonl::build_jsonl_chunk(records)?;
-        self.put_bytes_guarded(key, bytes.clone(), "application/x-ndjson", true)
+        let bytes = jsonl_bytes(records)?;
+        self.put_bytes_if_absent(key, bytes.clone(), JSONL_CONTENT_TYPE)
             .await?;
         Ok(bytes)
     }
@@ -43,8 +50,8 @@ impl ObjectStore {
         key: &str,
         records: &[T],
     ) -> AppResult<Vec<u8>> {
-        let (bytes, _) = crate::jsonl::build_jsonl_chunk(records)?;
-        self.put_bytes_idempotent(key, bytes.clone(), "application/x-ndjson")
+        let bytes = jsonl_bytes(records)?;
+        self.put_bytes_idempotent(key, bytes.clone(), JSONL_CONTENT_TYPE)
             .await?;
         Ok(bytes)
     }
@@ -55,7 +62,13 @@ impl ObjectStore {
         bytes: Vec<u8>,
         content_type: &'static str,
     ) -> AppResult<()> {
-        self.put_bytes_guarded(key, bytes, content_type, true).await
+        match self
+            .put_bytes_if_none_match(key, bytes, content_type)
+            .await?
+        {
+            PutOutcome::Stored => Ok(()),
+            PutOutcome::AlreadyExists => Err(self.object_already_exists_error(key)),
+        }
     }
 
     pub async fn put_bytes_idempotent(
@@ -64,65 +77,15 @@ impl ObjectStore {
         bytes: Vec<u8>,
         content_type: &'static str,
     ) -> AppResult<()> {
+        let expected_bytes = bytes.clone();
         match self
-            .put_bytes_guarded(key, bytes.clone(), content_type, true)
-            .await
+            .put_bytes_if_none_match(key, bytes, content_type)
+            .await?
         {
-            Ok(()) => Ok(()),
-            Err(AppError::Validation(message)) if message.contains("object already exists") => {
-                let existing = self.get_bytes(key).await?;
-                if existing == bytes {
-                    Ok(())
-                } else {
-                    Err(AppError::validation(format!(
-                        "idempotency conflict bucket={} key={key}",
-                        self.bucket
-                    )))
-                }
+            PutOutcome::Stored => Ok(()),
+            PutOutcome::AlreadyExists => {
+                self.ensure_existing_bytes_match(key, &expected_bytes).await
             }
-            Err(error) => Err(error),
         }
     }
-
-    async fn put_bytes_guarded(
-        &self,
-        key: &str,
-        bytes: Vec<u8>,
-        content_type: &'static str,
-        if_absent: bool,
-    ) -> AppResult<()> {
-        let mut request = self
-            .client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .content_type(content_type)
-            .body(ByteStream::from(bytes));
-        if if_absent {
-            request = request.if_none_match("*");
-        }
-        request.send().await.map_err(|error| {
-            let code = error.code().map(str::to_owned);
-            let message = error.to_string();
-            if if_absent && is_precondition_failure(code.as_deref(), &message) {
-                AppError::validation(format!(
-                    "object already exists bucket={} key={key}",
-                    self.bucket
-                ))
-            } else {
-                AppError::aws(format!(
-                    "put_object bucket={} key={} error={message}",
-                    self.bucket, key
-                ))
-            }
-        })?;
-        Ok(())
-    }
-}
-
-pub(super) fn is_precondition_failure(code: Option<&str>, message: &str) -> bool {
-    matches!(code, Some("PreconditionFailed"))
-        || message.contains("PreconditionFailed")
-        || message.contains("precondition")
-        || message.contains("412")
 }

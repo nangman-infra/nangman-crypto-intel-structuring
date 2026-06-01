@@ -110,6 +110,27 @@ fn rejects_s3_uri_prefix_case_insensitively() {
 }
 
 #[test]
+fn rejects_structured_prefix_with_unsafe_key_shape() {
+    for prefix in [
+        "structured-intel-packet/schema=structured_intel_packet_v1/../",
+        "structured-intel-packet/schema=structured_intel_packet_v1//dt=2026-05-24/",
+        "structured-intel-packet/schema=structured_intel_packet_v1/dt=2026-05-24?bad=true",
+        "structured-intel-packet/schema=structured_intel_packet_v1/dt=2026-05-24#bad",
+        "structured-intel-packet/schema=structured_intel_packet_v1/dt=2026-05-24/hour=10\\bad",
+    ] {
+        let error =
+            parse_cli_args(["--structured-prefix".to_owned(), prefix.to_owned()].into_iter())
+                .unwrap_err()
+                .to_string();
+
+        assert!(
+            error.contains("--structured-prefix"),
+            "expected structured-prefix validation error for {prefix:?}, got {error}"
+        );
+    }
+}
+
+#[test]
 fn rejects_zero_recent_hours() {
     let error =
         parse_cli_args(["--recent-hours".to_owned(), "0".to_owned()].into_iter()).unwrap_err();

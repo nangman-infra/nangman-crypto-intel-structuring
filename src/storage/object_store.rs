@@ -7,12 +7,14 @@ use aws_types::region::Region;
 
 mod config;
 mod read;
+mod validation;
 mod write;
 
 #[cfg(test)]
 mod tests;
 
 use config::validate_config;
+pub use validation::{validate_object_key, validate_object_prefix};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectStoreConfig {

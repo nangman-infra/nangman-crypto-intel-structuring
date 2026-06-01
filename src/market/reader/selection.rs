@@ -6,6 +6,9 @@ use std::collections::BTreeSet;
 const LATEST_BEFORE_MAX_INDEX_KEYS_PER_HOUR: usize = 5_000;
 const HOUR_MS: i64 = 3_600_000;
 
+#[cfg(test)]
+mod tests;
+
 impl MarketL1Reader {
     pub(super) async fn candidate_window_starts(&self, basis_window_start_ms: i64) -> Vec<i64> {
         let mut ordered = Vec::new();
@@ -14,7 +17,7 @@ impl MarketL1Reader {
             push_unique(
                 &mut ordered,
                 &mut seen,
-                basis_window_start_ms + offset * self.window_ms,
+                offset_window_start_ms(basis_window_start_ms, offset, self.window_ms),
             );
         }
         if let Ok(Some(latest_before)) =
@@ -37,18 +40,16 @@ impl MarketL1Reader {
                 .list_keys(&prefix, LATEST_BEFORE_MAX_INDEX_KEYS_PER_HOUR)
                 .await?
             {
-                let Some(window_start_ms) = parse_window_start_ms(&key) else {
-                    continue;
-                };
-                if window_start_ms > basis_window_start_ms || window_start_ms < earliest {
-                    continue;
-                }
                 latest =
-                    Some(latest.map_or(window_start_ms, |value: i64| value.max(window_start_ms)));
+                    latest_window_start_from_key(latest, &key, earliest, basis_window_start_ms);
             }
         }
         Ok(latest)
     }
+}
+
+fn offset_window_start_ms(basis_window_start_ms: i64, offset: i64, window_ms: i64) -> i64 {
+    basis_window_start_ms.saturating_add(offset.saturating_mul(window_ms))
 }
 
 fn push_unique(values: &mut Vec<i64>, seen: &mut BTreeSet<i64>, value: i64) {
@@ -84,58 +85,23 @@ fn parse_window_start_ms(key: &str) -> Option<i64> {
         .ok()
 }
 
+fn latest_window_start_from_key(
+    latest: Option<i64>,
+    key: &str,
+    earliest_ms: i64,
+    basis_window_start_ms: i64,
+) -> Option<i64> {
+    let window_start_ms = parse_window_start_ms(key)?;
+    if window_start_ms > basis_window_start_ms || window_start_ms < earliest_ms {
+        return latest;
+    }
+    Some(latest.map_or(window_start_ms, |value| value.max(window_start_ms)))
+}
+
 pub fn index_pointer_key(window_ms: i64, window_start_ms: i64) -> String {
     let part = time_part(window_start_ms);
     format!(
         "l1_index/window_ms={window_ms}/event_date={}/hour={:02}/window_start_ms={window_start_ms}.json",
         part.event_date, part.hour
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn builds_market_l1_index_key() {
-        assert_eq!(
-            index_pointer_key(1_000, 0),
-            "l1_index/window_ms=1000/event_date=1970-01-01/hour=00/window_start_ms=0.json"
-        );
-    }
-
-    #[test]
-    fn parses_window_start_from_index_key() {
-        assert_eq!(
-            parse_window_start_ms(
-                "l1_index/window_ms=1000/event_date=2026-05-08/hour=12/window_start_ms=1778242444000.json"
-            ),
-            Some(1_778_242_444_000)
-        );
-    }
-
-    #[test]
-    fn builds_previous_and_current_hour_prefixes_for_cross_hour_lookback() {
-        assert_eq!(
-            index_prefixes(1_000, 3_599_000, 3_600_000),
-            vec![
-                "l1_index/window_ms=1000/event_date=1970-01-01/hour=00/".to_owned(),
-                "l1_index/window_ms=1000/event_date=1970-01-01/hour=01/".to_owned(),
-            ]
-        );
-    }
-
-    #[test]
-    fn builds_all_hour_prefixes_for_multi_hour_latest_before_lookback() {
-        assert_eq!(
-            index_prefixes(1_000, 0, 14_400_000),
-            vec![
-                "l1_index/window_ms=1000/event_date=1970-01-01/hour=00/".to_owned(),
-                "l1_index/window_ms=1000/event_date=1970-01-01/hour=01/".to_owned(),
-                "l1_index/window_ms=1000/event_date=1970-01-01/hour=02/".to_owned(),
-                "l1_index/window_ms=1000/event_date=1970-01-01/hour=03/".to_owned(),
-                "l1_index/window_ms=1000/event_date=1970-01-01/hour=04/".to_owned(),
-            ]
-        );
-    }
 }
